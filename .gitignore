@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secretos — NUNCA commitear
+.env
+*.key
+credentials*.json
+
+# Binarios pesados de trabajo (los finales se publican con Git LFS o Releases)
+renders/*.mp4
+renders/*.mov
+assets/videos/*.mp4
+assets/videos/*.mov
+assets/audio/*.wav
+assets/audio/*.mp3
+assets/music/*.mp3
+thumbnails/*.png
+
+# Logs de ejecución
+logs/*.log
+
+# Sistema
+.DS_Store
+Thumbs.db

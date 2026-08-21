@@ -1,0 +1,15 @@
+# Núcleo del MVP
+pyyaml>=6.0
+python-dotenv>=1.0
+requests>=2.31
+
+# Voz TTS — proveedor inicial gratuito (abstracción permite cambiar a ElevenLabs/OpenAI)
+edge-tts>=6.1.0
+
+# Subtítulos con tiempos por palabra (transcripción alineada de la narración)
+faster-whisper>=1.0.0
+
+# NOTA: FFmpeg es un binario EXTERNO obligatorio (no se instala por pip).
+#   - Comprobar instalación: ffmpeg -version
+#   - Se usa para: montaje, zoom/pan, transiciones, mezcla de audio,
+#     incrustación de subtítulos ASS, blackdetect/freezedetect y ffprobe (QC).
