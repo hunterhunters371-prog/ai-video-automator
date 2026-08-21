@@ -1,0 +1,29 @@
+# Plantilla: top10 — rankings y listas (versión corta: top 3-5)
+name: top10
+description: Rankings rápidos. En formato corto se usa top 3-5 con cuenta atrás.
+duration_target_s: 45
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+structure:
+  - { role: hook,        max_s: 3 }
+  - { role: item,        max_s: 8, repeat: 5 }   # un beat por posición del ranking
+  - { role: cierre_cta,  max_s: 5 }
+
+style:
+  font: "Anton"
+  colors: { primary: "#FFFFFF", highlight: "#FF6D00", accent: "#FFD400", background: "#0D0D0D" }
+  caption_position: lower_third
+  show_rank_numbers: true      # número grande por posición
+
+preferred_assets: [stock, capturas, imagen_ia]
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+
+transitions: { in: slide_up, between: whip, out: fade }
+music: { mood: building, volume: 0.15, ducking: true }
+sfx: [whoosh, drum_hit]

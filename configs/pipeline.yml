@@ -1,0 +1,38 @@
+# Configuración global del pipeline
+defaults:
+  language: es
+  duration_target_s: 30        # 15 / 30 / 45 / 60 (o máximo de la plataforma)
+  template: roblox             # plantilla por defecto si RESEARCH no elige otra
+  resolution: [1080, 1920]     # 9:16 vertical
+  fps: 30
+
+stages:
+  research:   { timeout_s: 300, retries: 2 }
+  script:     { timeout_s: 180, retries: 3, hook_options: 5 }
+  storyboard: { timeout_s: 180, retries: 2 }
+  assets:     { timeout_s: 600, retries: 2 }
+  voice:      { timeout_s: 300, retries: 3 }
+  editing:    { timeout_s: 600, retries: 2 }
+  rendering:  { timeout_s: 900, retries: 2 }
+  qc:         { timeout_s: 300, retries: 1 }
+
+retry:
+  backoff_base_s: 5            # backoff exponencial: 5s, 10s, 20s...
+
+resume:
+  from_last_checkpoint: true   # nunca reiniciar un proyecto desde cero
+
+qc:
+  auto_fix: true               # corregir → re-render → re-validar
+  max_qc_loops: 3
+  duration_tolerance_s: 1.5
+  black_detect_threshold_s: 0.4
+  freeze_detect_threshold_s: 2.0
+
+storage:
+  large_files: git-lfs         # renders finales y assets pesados
+
+batch:
+  max_parallel: 2              # proyectos simultáneos en un lote
+  diversity:                   # matriz para que no salgan videos idénticos
+    axes: [subtema, angulo, plantilla, duracion]

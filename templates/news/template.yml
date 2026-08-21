@@ -1,0 +1,30 @@
+# Plantilla: news — noticias de última hora
+name: news
+description: Noticias urgentes de cualquier tema. Ritmo rápido, titulares grandes.
+duration_target_s: 30
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+structure:
+  - { role: hook,        max_s: 3 }
+  - { role: contexto,    max_s: 6 }
+  - { role: dato_clave,  max_s: 9 }
+  - { role: impacto,     max_s: 7 }
+  - { role: cierre_cta,  max_s: 5 }
+
+style:
+  font: "Montserrat ExtraBold"
+  colors: { primary: "#FFFFFF", highlight: "#FF3B3B", accent: "#FFD400", background: "#0B0B0F" }
+  caption_position: lower_third
+
+preferred_assets: [imagen_ia, stock, capturas]
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+
+transitions: { in: zoom_punch, between: whip, out: fade }
+music: { mood: urgent, volume: 0.15, ducking: true }
+sfx: [whoosh, impact]

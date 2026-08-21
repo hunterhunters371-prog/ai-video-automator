@@ -1,0 +1,30 @@
+# Plantilla: storytelling — mini-historias con tensión y giro
+name: storytelling
+description: Narración de una historia corta con tensión creciente y giro final.
+duration_target_s: 60
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+structure:
+  - { role: hook,         max_s: 3 }
+  - { role: planteamiento, max_s: 12 }
+  - { role: nudo,          max_s: 20 }
+  - { role: giro,          max_s: 15 }
+  - { role: desenlace,     max_s: 10 }
+
+style:
+  font: "Libre Baskerville"
+  colors: { primary: "#F5F5F0", highlight: "#E57373", accent: "#90A4AE", background: "#12100E" }
+  caption_position: lower_third
+
+preferred_assets: [imagen_ia, stock]
+
+captions:
+  words_per_group: [3, 5]
+  max_chars_per_line: 26
+  highlight_keywords: false    # estilo más limpio; la tensión la lleva la voz
+
+transitions: { in: fade, between: slow_zoom, out: fade }
+music: { mood: cinematic, volume: 0.18, ducking: true }
+sfx: [riser, heartbeat]

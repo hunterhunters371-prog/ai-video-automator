@@ -1,0 +1,29 @@
+# Restricciones por plataforma (verificación automática en QC)
+youtube_shorts:
+  aspect: "9:16"
+  resolution: [1080, 1920]
+  fps: [30, 60]
+  min_duration_s: 5
+  max_duration_s: 180          # Shorts permite hasta 3 min; objetivo habitual ≤ 60
+  recommended_max_s: 60
+
+tiktok:
+  aspect: "9:16"
+  resolution: [1080, 1920]
+  fps: [30, 60]
+  min_duration_s: 3
+  max_duration_s: 600
+  recommended_max_s: 60
+
+instagram_reels:
+  aspect: "9:16"
+  resolution: [1080, 1920]
+  fps: [30]
+  min_duration_s: 3
+  max_duration_s: 90
+  recommended_max_s: 60
+
+# Zonas seguras de subtítulos (fracción de la altura, medida desde abajo)
+safe_zones:
+  captions_bottom_min: 0.22    # por encima de la UI de la plataforma
+  captions_bottom_max: 0.38    # nunca en el centro visual de la escena

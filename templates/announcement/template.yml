@@ -1,0 +1,29 @@
+# Plantilla: announcement — anuncios y lanzamientos
+name: announcement
+description: Anuncios oficiales: lanzamientos, fechas, novedades confirmadas.
+duration_target_s: 20
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+structure:
+  - { role: hook,        max_s: 3 }
+  - { role: anuncio,     max_s: 7 }
+  - { role: detalles,    max_s: 7 }
+  - { role: cierre_cta,  max_s: 4 }
+
+style:
+  font: "Montserrat Black"
+  colors: { primary: "#FFFFFF", highlight: "#00C853", accent: "#FFD400", background: "#0A0F0A" }
+  caption_position: lower_third
+
+preferred_assets: [capturas, imagen_ia, stock]
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+
+transitions: { in: zoom_punch, between: fade, out: fade }
+music: { mood: triumphant, volume: 0.15, ducking: true }
+sfx: [impact, sparkle]

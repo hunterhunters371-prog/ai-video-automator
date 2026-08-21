@@ -1,0 +1,58 @@
+{
+  "comment": "Ejemplo de storyboard temporal. La edición es determinista: todo lo que aparece en pantalla sale de este JSON.",
+  "duration_target_s": 25,
+  "fps": 30,
+  "resolution": [1080, 1920],
+  "segments": [
+    {
+      "t": "00:00-00:02",
+      "role": "hook",
+      "narration": "Esto acaba de cambiar Roblox para siempre.",
+      "on_screen_text": "CAMBIO ENORME",
+      "asset": { "type": "gameplay", "src": "assets/gameplay_evento.mp4" },
+      "animation": "zoom_punch",
+      "transition_in": "cut",
+      "sfx": "impact"
+    },
+    {
+      "t": "00:02-00:06",
+      "role": "contexto",
+      "narration": "Roblox acaba de anunciar su próximo gran evento...",
+      "on_screen_text": "NUEVO EVENTO",
+      "asset": { "type": "imagen", "src": "assets/anuncio_oficial.png" },
+      "animation": "ken_buns_in",
+      "transition_in": "whip",
+      "sfx": "whoosh"
+    },
+    {
+      "t": "00:06-00:12",
+      "role": "dato_clave",
+      "narration": "...y llega con recompensas exclusivas por tiempo limitado.",
+      "on_screen_text": "RECOMPENSAS EXCLUSIVAS",
+      "asset": { "type": "gameplay", "src": "assets/gameplay_recompensas.mp4" },
+      "animation": "cut_rapido",
+      "transition_in": "whip",
+      "sfx": "pop"
+    },
+    {
+      "t": "00:12-00:18",
+      "role": "revelacion",
+      "narration": "Pero lo que nadie notó es este detalle del tráiler...",
+      "on_screen_text": "¿VISTE ESTO?",
+      "asset": { "type": "captura", "src": "assets/detalle_trailer.png" },
+      "animation": "zoom_lento",
+      "transition_in": "zoom",
+      "sfx": "riser"
+    },
+    {
+      "t": "00:18-00:25",
+      "role": "cierre_cta",
+      "narration": "Marca la fecha y sígueme para no perderte nada.",
+      "on_screen_text": "GUARDA LA FECHA",
+      "asset": { "type": "gameplay", "src": "assets/gameplay_cierre.mp4" },
+      "animation": "zoom_out",
+      "transition_in": "fade",
+      "sfx": "impact"
+    }
+  ]
+}

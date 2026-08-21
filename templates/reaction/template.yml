@@ -1,0 +1,30 @@
+# Plantilla: reaction — reacción/comentario a un clip o noticia
+name: reaction
+description: Comentario con opinión sobre un clip, captura o noticia existente.
+duration_target_s: 30
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+structure:
+  - { role: hook,        max_s: 3 }
+  - { role: contexto,    max_s: 6 }
+  - { role: reaccion,    max_s: 10 }
+  - { role: argumento,   max_s: 8 }
+  - { role: cierre_cta,  max_s: 4 }
+
+style:
+  font: "Poppins ExtraBold"
+  colors: { primary: "#FFFFFF", highlight: "#FF4081", accent: "#FFD400", background: "#0C0C0C" }
+  caption_position: lower_third
+
+preferred_assets: [clip_referencia, capturas, gameplay]
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+
+transitions: { in: zoom_punch, between: cut, out: fade }
+music: { mood: playful, volume: 0.13, ducking: true }
+sfx: [pop, record_scratch]

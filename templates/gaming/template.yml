@@ -1,0 +1,30 @@
+# Plantilla: gaming — noticias y curiosidades de videojuegos en general
+name: gaming
+description: Contenido gaming general. Dinámico, con gameplay como base visual.
+duration_target_s: 30
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 60                        # gameplay se ve mejor a 60 fps
+
+structure:
+  - { role: hook,        max_s: 3 }
+  - { role: contexto,    max_s: 6 }
+  - { role: dato_clave,  max_s: 9 }
+  - { role: revelacion,  max_s: 7 }
+  - { role: cierre_cta,  max_s: 5 }
+
+style:
+  font: "Rubik Mono One"
+  colors: { primary: "#FFFFFF", highlight: "#00E5FF", accent: "#B388FF", background: "#0A0A12" }
+  caption_position: lower_third
+
+preferred_assets: [gameplay, capturas, stock]
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+
+transitions: { in: zoom_punch, between: glitch, out: fade }
+music: { mood: energetic, volume: 0.14, ducking: true }
+sfx: [whoosh, pop, glitch]

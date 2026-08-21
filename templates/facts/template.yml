@@ -1,0 +1,30 @@
+# Plantilla: facts — datos curiosos y "¿sabías que...?"
+name: facts
+description: Datos sorprendentes. El dato es el protagonista; revelación al final.
+duration_target_s: 25
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+structure:
+  - { role: hook,        max_s: 3 }
+  - { role: planteamiento, max_s: 6 }
+  - { role: dato_clave,  max_s: 8 }
+  - { role: sorpresa,    max_s: 6 }
+  - { role: cierre,      max_s: 3 }
+
+style:
+  font: "Poppins Bold"
+  colors: { primary: "#FFFFFF", highlight: "#7CFC00", accent: "#FFD400", background: "#101418" }
+  caption_position: lower_third
+
+preferred_assets: [imagen_ia, stock]
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+
+transitions: { in: fade_scale, between: slide, out: fade }
+music: { mood: curious, volume: 0.16, ducking: true }
+sfx: [pop, ding]

@@ -1,0 +1,30 @@
+# Plantilla: roblox — noticias y eventos de Roblox con ritmo rápido
+name: roblox
+description: Eventos, actualizaciones y noticias de Roblox. Energía alta, texto gigante.
+duration_target_s: 30
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+structure:                     # estructura narrativa (roles y duración máxima por beat)
+  - { role: hook,        max_s: 3 }
+  - { role: contexto,    max_s: 6 }
+  - { role: dato_clave,  max_s: 9 }
+  - { role: revelacion,  max_s: 7 }
+  - { role: cierre_cta,  max_s: 5 }
+
+style:
+  font: "Montserrat ExtraBold"
+  colors: { primary: "#FFFFFF", highlight: "#FFD400", accent: "#FF3B3B", background: "#0E0E10" }
+  caption_position: lower_third
+
+preferred_assets: [gameplay, capturas, imagen_ia]   # prioridad al resolver el storyboard
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+
+transitions: { in: zoom_punch, between: whip, out: fade }
+music: { mood: energetic, volume: 0.15, ducking: true }
+sfx: [whoosh, pop, impact]
