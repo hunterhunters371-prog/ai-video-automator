@@ -7,6 +7,11 @@ pitch: "+0Hz"
 volume: "+0%"
 intensity: 1.0
 
+# Robustez: edge-tts sintetiza por websocket y ese socket puede quedarse
+# esperando indefinidamente (Cloud Shell, redes con proxy).
+timeout_s: 60                  # sin respuesta en este tiempo → se corta y reintenta
+retries: 3                     # intentos por línea antes de fallar la etapa
+
 # Pausas para que no suene a lectura robótica
 pauses:
   comma_ms: 120

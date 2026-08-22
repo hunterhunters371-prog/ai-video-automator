@@ -44,7 +44,8 @@ STAGE_REGISTRY = {
 STAGE_HINTS = {
     Stage.EDITING: "la 1ª vez baja el modelo whisper (~150 MB): son minutos, es normal",
     Stage.ASSETS: "descarga/genera un recurso por escena",
-    Stage.ANIMATE: "clips de personaje: hoy manual (Flow), después Colab",
+    Stage.VOICE: "en modo historia, una llamada TTS por línea",
+    Stage.ANIMATE: "clips de personaje: hoy manual (Meta AI / Flow), después Colab",
     Stage.RENDERING: "ffmpeg montando el video final",
 }
 
@@ -152,6 +153,17 @@ class Orchestrator:
                 print(f"|| PAUSA en {stage.value} — paso manual pendiente:", flush=True)
                 print(f"   {exc}", flush=True)
                 return
+            except KeyboardInterrupt:
+                # Ctrl+C: tampoco es FAILED. Lo hecho hasta aquí queda en disco.
+                project.data["state"] = stage.value
+                project.save()
+                self._log(project, f"|| interrumpido en {stage.value}")
+                print(f"\n|| INTERRUMPIDO con Ctrl+C en {stage.value} tras "
+                      f"{time.monotonic() - inicio:.1f}s — no es un fallo.",
+                      flush=True)
+                print(f"   lo hecho se conserva: python -m src.main resume "
+                      f"{project.project_id}", flush=True)
+                raise SystemExit(130)
             except Exception as exc:  # registrar y conservar TODO el trabajo
                 project.mark_failed(stage, str(exc))
                 self._log(project, f"x {stage.value}: {exc}")

@@ -41,16 +41,21 @@ def main() -> None:
     args = parser.parse_args()
     orch = Orchestrator.from_repo_root()
 
-    if args.command == "new":
-        orch.create_and_run(args.idea, template=args.template, duration=args.duration)
-    elif args.command == "resume":
-        orch.resume(args.project_id)
-    elif args.command == "status":
-        orch.status(args.project_id)
-    elif args.command == "batch":
-        orch.batch(args.source, count=args.count)
-    elif args.command == "process-inbox":
-        orch.process_inbox()
+    try:
+        if args.command == "new":
+            orch.create_and_run(args.idea, template=args.template, duration=args.duration)
+        elif args.command == "resume":
+            orch.resume(args.project_id)
+        elif args.command == "status":
+            orch.status(args.project_id)
+        elif args.command == "batch":
+            orch.batch(args.source, count=args.count)
+        elif args.command == "process-inbox":
+            orch.process_inbox()
+    except KeyboardInterrupt:
+        # Ctrl+C fuera del pipeline: salida limpia, sin traceback de asyncio.
+        print("\ninterrumpido por el usuario (Ctrl+C)", flush=True)
+        raise SystemExit(130)
 
 
 if __name__ == "__main__":

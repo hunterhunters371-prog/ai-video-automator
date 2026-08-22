@@ -7,6 +7,12 @@ Dos modos según script.json:
     ANIMATE) y el voice.mp3 completo ensamblado con ffmpeg para que
     EDITING/RENDERING actuales sigan funcionando.
 
+edge-tts habla por websocket con el servicio de Microsoft y ese socket puede
+quedarse esperando indefinidamente (Cloud Shell, redes con proxy). Por eso
+cada síntesis lleva timeout + reintentos, y escribe a un .part que solo se
+renombra al .mp3 final si el audio es válido: un corte (Ctrl+C, caída de red)
+nunca deja un mp3 a medias que el cache daría por bueno.
+
 Salida: assets/voice.mp3 + duración real del audio (EDITING re-sincroniza
         los tiempos del storyboard con ella).
 """
@@ -16,6 +22,7 @@ import asyncio
 import json
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import edge_tts
@@ -24,6 +31,12 @@ from .. import config
 from ..state import Project, Stage
 from .base import BaseStage, StageError
 from .script import NARRATOR
+
+# Un mp3 de edge-tts ronda los 4 KB por segundo. Por debajo de esto el archivo
+# está truncado o vacío, no es una línea corta.
+MIN_AUDIO_BYTES = 1000
+TIMEOUT_S = 60.0
+INTENTOS = 3
 
 _U20 = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete",
         "ocho", "nueve", "diez", "once", "doce", "trece", "catorce",
@@ -67,15 +80,33 @@ class VoiceStage(BaseStage):
 
         vdir = project.path / "voice"
         vdir.mkdir(exist_ok=True)
+        _limpiar_restos(vdir)
+
+        lineas = script["lineas"]
+        total = len(lineas)
+        print(f"  {total} líneas · una llamada TTS por línea (~2-5 s cada una)",
+              flush=True)
+
         partes = []
         t = 0.0
-        for i, ln in enumerate(script["lineas"], 1):
+        for i, ln in enumerate(lineas, 1):
             quien = ln["quien"]
+            voz = voces.get(quien)
+            if voz is None:  # el guion nombró a alguien fuera de personajes[]
+                print(f"  !! sin voz asignada para {quien!r}: uso la del narrador",
+                      flush=True)
+                voz = voces[NARRATOR]
             parte = vdir / f"l{i:03d}_{_slug(quien)}.mp3"
-            # cada archivo es idempotente: un retry solo repite lo que falta
-            if not (parte.exists() and parte.stat().st_size > 0):
-                _tts(preprocess(str(ln["texto"])), voces[quien], cfg, parte)
+            # cada archivo es idempotente: un corte o un retry solo repite lo que falta
+            if _size(parte) >= MIN_AUDIO_BYTES:
+                marca = "cache"
+            else:
+                parte.unlink(missing_ok=True)
+                inicio = time.monotonic()
+                _tts(preprocess(str(ln["texto"])), voz, cfg, parte)
+                marca = f"{time.monotonic() - inicio:.1f}s"
             dur = _duration(parte)
+            print(f"  · {i}/{total} {quien} · {dur:.1f}s ({marca})", flush=True)
             partes.append({
                 "archivo": parte.name,
                 "quien": quien,
@@ -117,22 +148,80 @@ class VoiceStage(BaseStage):
                 "voice_lines": "voice/lines.json"}
 
 
+def _limpiar_restos(vdir: Path) -> None:
+    """Descarta lo que un corte anterior pudo dejar a medias.
+
+    Las líneas se generan en orden, así que si no llegó a escribirse lines.json
+    la única sospechosa es la última: las anteriores están completas. Las
+    versiones antiguas escribían directamente sobre el .mp3, y un mp3 truncado
+    puede pesar lo suficiente para colarse por el cache.
+    """
+    for resto in vdir.glob("*.part"):
+        resto.unlink(missing_ok=True)
+    if (vdir / "lines.json").exists():
+        return
+    previas = sorted(vdir.glob("l[0-9][0-9][0-9]_*.mp3"))
+    if previas:
+        print(f"  descarto {previas[-1].name}: pudo quedar a medias en el corte "
+              "anterior", flush=True)
+        previas[-1].unlink(missing_ok=True)
+
+
+def _size(path: Path) -> int:
+    return path.stat().st_size if path.exists() else 0
+
+
+async def _sintetizar(text: str, voice: str, cfg: dict, dest: Path,
+                      timeout_s: float) -> None:
+    await asyncio.wait_for(
+        edge_tts.Communicate(
+            text,
+            voice=voice,
+            rate=cfg.get("rate", "+0%"),
+            pitch=cfg.get("pitch", "+0Hz"),
+            volume=cfg.get("volume", "+0%"),
+        ).save(str(dest)),
+        timeout=timeout_s,
+    )
+
+
 def _tts(text: str, voice: str, cfg: dict, out: Path) -> None:
-    """Sintetiza `text` con `voice` vía edge-tts y valida el resultado."""
-    try:
-        asyncio.run(
-            edge_tts.Communicate(
-                text,
-                voice=voice,
-                rate=cfg.get("rate", "+0%"),
-                pitch=cfg.get("pitch", "+0Hz"),
-                volume=cfg.get("volume", "+0%"),
-            ).save(str(out))
-        )
-    except Exception as exc:
-        raise StageError(f"edge-tts falló ({voice}): {exc}") from exc
-    if not out.exists() or out.stat().st_size == 0:
-        raise StageError(f"edge-tts no produjo audio ({voice})")
+    """Sintetiza `text` con `voice` y deja el mp3 en `out` (escritura atómica).
+
+    Sin timeout el websocket de edge-tts puede esperar para siempre y la etapa
+    parece colgada. Cada intento escribe a un .part y solo se renombra al final
+    si el audio pesa lo esperado.
+    """
+    timeout_s = float(cfg.get("timeout_s", TIMEOUT_S))
+    intentos = max(1, int(cfg.get("retries", INTENTOS)))
+    tmp = out.with_suffix(".part")
+    fallo = ""
+    for intento in range(1, intentos + 1):
+        tmp.unlink(missing_ok=True)
+        try:
+            asyncio.run(_sintetizar(text, voice, cfg, tmp, timeout_s))
+        except KeyboardInterrupt:
+            tmp.unlink(missing_ok=True)  # nunca dejar audio a medias
+            raise
+        except asyncio.TimeoutError:
+            fallo = f"sin respuesta en {timeout_s:.0f}s"
+        except Exception as exc:
+            fallo = f"{type(exc).__name__}: {exc}"
+        else:
+            if _size(tmp) >= MIN_AUDIO_BYTES:
+                tmp.replace(out)
+                return
+            fallo = f"audio truncado ({_size(tmp)} bytes)"
+        if intento < intentos:
+            espera = 2 * intento
+            print(f"    intento {intento}/{intentos} falló ({voice}): {fallo} "
+                  f"— reintento en {espera}s", flush=True)
+            time.sleep(espera)
+    tmp.unlink(missing_ok=True)
+    raise StageError(
+        f"edge-tts falló {intentos} veces con {voice}: {fallo}. "
+        "Revisa la conexión y reanuda: las líneas ya generadas no se repiten."
+    )
 
 
 def _slug(text: str) -> str:
