@@ -7,6 +7,30 @@ Pipeline autónomo idea → Short vertical 9:16: research (web+LLM) → script (
 (whisper + ASS) → rendering (ffmpeg) → QC (ffprobe). Docs: README.md,
 docs/ARQUITECTURA.md, docs/MVP.md, docs/SETUP.md.
 
+## Visión del producto (declarada 22 ago 2026)
+
+El objetivo NO es el carrusel narrado que produce hoy: es **automatizar
+frutinovelas / mini historias con un personaje que habla** para YouTube Shorts
+(formato viral 2026: frutas antropomórficas con ojos/boca en mini dramas de
+10-30 s). Brecha técnica frente al pipeline actual — 3 capacidades nuevas:
+
+1. **Personaje consistente**: la misma fruta/personaje en todas las escenas y
+   episodios. Estrategia base: descriptor fijo + hoja de personaje reutilizable
+   [por diseñar].
+2. **Diálogo multi-voz**: guion por líneas de personaje; edge-tts tiene voces
+   ES suficientes para asignar una por personaje (gratis, trivial).
+3. **Animación / boca que habla** (lo más caro en cómputo):
+   - Open source: SadTalker (Apache-2.0, foto+audio→cabeza parlante, el
+     clásico), MuseTalk (mejor calidad), Wav2Lip (rápido, básico). Todos
+     requieren GPU → **Colab free** (Cloud Shell NO tiene GPU; alineado con la
+     regla de Colab como cómputo legítimo).
+   - HF Inference Providers: la tabla oficial incluye la tarea text-to-video
+     con algunos proveedores; el free tier mensual es pequeño y el video lo
+     agota rápido [no verificado contra la cuenta].
+   - La comunidad hace frutinovelas a mano con Google Flow (gratis con cuenta
+     Google). NO automatizar Flow con navegador remoto (ToS); solo referencia
+     de estilo.
+
 ## Estado actual (22 ago 2026, ~22:00 UTC)
 
 **M1 CERRADO y la generación de imágenes IA VERIFICADA en producción.**
@@ -96,11 +120,17 @@ docs/ARQUITECTURA.md, docs/MVP.md, docs/SETUP.md.
 8. Endpoints solo desde doc viva. `api-inference.huggingface.co` y
    `hf-inference`+FLUX son ejemplos de rutas que murieron sin aviso.
 
-## Pendientes después del segundo Short
+## Pendientes (M2 orientado a frutinovelas)
 
-- M2: transiciones xfade, SFX, loop de QC con LLM (QC actual es técnico: un
-  video feo pero válido pasa igual), verificación de las 8 plantillas.
-- Confirmar endpoints de Pollinations (texto e imagen) contra la doc viva.
+- **Ruta de animación por elegir con el usuario**: (a) gratis total = Colab +
+  SadTalker/MuseTalk; (b) primero personaje consistente + multi-voz + movimiento
+  Ken Burns sin lip-sync (sale rápido, lip-sync después); (c) APIs de pago
+  (máxima calidad).
+- SCRIPT en modo diálogo con reparto de voces por personaje (edge-tts).
+- PERSONAJE: hoja de personaje consistente (descriptor fijo + reutilización).
+- Siguen útiles de la lista anterior: transiciones xfade, SFX, QC con LLM,
+  verificación de las 8 plantillas.
+- Confirmar endpoints de Pollinations contra la doc viva.
 - Colab: SOLO como entorno de render del pipeline (uso legítimo); NUNCA
   navegador remoto (los ToS de Colab lo prohíben → suspenderían la cuenta Google
   que sostiene Cloud Shell).
