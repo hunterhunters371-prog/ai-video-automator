@@ -5,11 +5,12 @@ Responsabilidades:
   - Ejecutar etapas en orden guardando checkpoint tras cada una.
   - Reanudar desde el último estado completado (`resume`).
   - Registrar errores sin destruir el trabajo realizado.
-  - Log por proyecto en logs/<id>.log.
+  - Log por proyecto en logs/<id>.log y progreso visible en consola.
 """
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,6 +35,14 @@ STAGE_REGISTRY = {
     Stage.QC: QCStage,
 }
 
+# Etapas que tardan y no imprimen nada por su cuenta: se avisa antes de entrar
+# para que un silencio largo no parezca un cuelgue.
+STAGE_HINTS = {
+    Stage.EDITING: "la 1ª vez baja el modelo whisper (~150 MB): son minutos, es normal",
+    Stage.ASSETS: "descarga/genera un recurso por escena",
+    Stage.RENDERING: "ffmpeg montando el video final",
+}
+
 
 class Orchestrator:
     def __init__(self, root: Path) -> None:
@@ -53,13 +62,20 @@ class Orchestrator:
         )
         project.mark_completed(Stage.IDEA)
         self._log(project, f"IDEA: {idea!r}")
+        print(f"proyecto {project_id} creado · idea: {idea}", flush=True)
         self._run_pipeline(project)
         return project
 
     def resume(self, project_id: str) -> Project:
         """RESUME VIDEO #NNN → continúa desde el primer estado no completado."""
         project = Project.load(self.root, project_id)
-        self._log(project, f"resume desde {project.next_stage()}")
+        pendiente = project.next_stage()
+        self._log(project, f"resume desde {pendiente}")
+        if pendiente is None:
+            print(f"{project_id} ya estaba COMPLETED: no hay nada que reanudar.",
+                  flush=True)
+        else:
+            print(f"reanudando {project_id} desde {pendiente.value}", flush=True)
         self._run_pipeline(project)
         return project
 
@@ -73,6 +89,9 @@ class Orchestrator:
                 print(f"  ✓ {key}: {val}")
             for err in data["errors"]:
                 print(f"  ✗ {err['stage']}: {err['error'][:120]}")
+            if data["errors"] and data["state"] == Stage.COMPLETED.value:
+                print("  (los ✗ son intentos anteriores ya superados: el estado "
+                      "actual es COMPLETED)")
             return
         rows = []
         for pj in sorted((self.root / "projects").glob("video-*/project.json")):
@@ -106,20 +125,31 @@ class Orchestrator:
                 project.data["state"] = Stage.COMPLETED.value
                 project.save()
                 self._log(project, "COMPLETED")
+                render = self.root / "renders" / f"{project.project_id}.mp4"
+                sufijo = f" → {render}" if render.exists() else ""
+                print(f"COMPLETED {project.project_id}{sufijo}", flush=True)
                 return
             runner = STAGE_REGISTRY.get(stage)
             if runner is None:  # IDEA se marca al crear el proyecto
                 project.mark_completed(stage)
                 continue
             self._log(project, f"> {stage.value}")
+            pista = STAGE_HINTS.get(stage)
+            print(f"> {stage.value}" + (f"  ({pista})" if pista else ""), flush=True)
+            inicio = time.monotonic()
             try:
                 artifacts = runner().run_with_retry(project)
             except Exception as exc:  # registrar y conservar TODO el trabajo
                 project.mark_failed(stage, str(exc))
                 self._log(project, f"x {stage.value}: {exc}")
+                print(f"x {stage.value} falló tras {time.monotonic() - inicio:.1f}s: "
+                      f"{exc}", flush=True)
+                print(f"  el trabajo previo se conserva: "
+                      f"python -m src.main resume {project.project_id}", flush=True)
                 raise
             project.mark_completed(stage, artifacts)
             self._log(project, f"ok {stage.value}")
+            print(f"  ok {stage.value} ({time.monotonic() - inicio:.1f}s)", flush=True)
 
     def _log(self, project: Project, msg: str) -> None:
         logs = self.root / "logs"
