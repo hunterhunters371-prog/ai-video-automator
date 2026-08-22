@@ -3,11 +3,15 @@
 Entrada: storyboard.json.
 Salida:  assets_map.json + archivos en projects/<id>/assets/.
 Orden de resolución por escena: (1) ruta explícita en repo/proyecto,
-(2) stock Pexels si hay clave, (3) fondo de color de la plantilla (siempre
-funciona, sin claves). Imagen IA: interfaz en ARQUITECTURA.md §6, fase posterior.
+(2) stock de video Pexels si hay clave, (3) imagen IA gratuita (HF Inference
+o Pollinations, según configs/images.yml), (4) foto de stock Pexels,
+(5) fondo de color de la plantilla (siempre funciona, sin claves).
+Video IA gratis: no existe API confiable sin pago — el video sale de stock
+o de material del usuario.
 """
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import subprocess
@@ -21,6 +25,10 @@ from .base import BaseStage, StageError
 
 PEXELS_VIDEOS = "https://api.pexels.com/videos/search"
 PEXELS_PHOTOS = "https://api.pexels.com/v1/search"
+HF_URL = "https://api-inference.huggingface.co/models/{model}"
+# [no verificado] endpoint exacto de la API nueva de Pollinations:
+# si falla en la primera ejecución real, confirmar en https://gen.pollinations.ai/docs
+POLLINATIONS_URL = "https://gen.pollinations.ai/v1/images/generations"
 VIDEO_EXT = {".mp4", ".mov", ".webm", ".mkv"}
 AUDIO_EXT = {".mp3", ".wav", ".ogg", ".m4a"}
 
@@ -76,14 +84,25 @@ class AssetsStage(BaseStage):
                     shutil.copy2(candidate, dest)
                     return {"path": str(dest.relative_to(project.path)),
                             "kind": _kind(dest), "origin": "repo"}
-        # 2. stock Pexels (opcional)
         prompt = ((seg.get("asset") or {}).get("prompt")
                   or seg.get("on_screen_text") or project.data["idea"]["text"])
-        found = self._pexels(prompt, dest_base)
-        if found:
-            return {"path": str(found.relative_to(project.path)),
-                    "kind": _kind(found), "origin": "pexels"}
-        # 3. fondo de color de la plantilla (determinista, sin claves)
+        # 2. stock de video
+        video = self._pexels(prompt, dest_base, videos=True)
+        if video:
+            return {"path": str(video.relative_to(project.path)),
+                    "kind": "video", "origin": "pexels"}
+        # 3. imagen IA gratuita
+        ai = self._ai_image(prompt, dest_base)
+        if ai:
+            return {"path": str(ai.relative_to(project.path)),
+                    "kind": "image",
+                    "origin": f"ia:{(config.IMAGES or {}).get('provider')}"}
+        # 4. foto de stock
+        photo = self._pexels(prompt, dest_base, videos=False)
+        if photo:
+            return {"path": str(photo.relative_to(project.path)),
+                    "kind": "image", "origin": "pexels"}
+        # 5. fondo de color de la plantilla (determinista, sin claves)
         dest = dest_base.with_suffix(".png")
         bg = (template.get("style", {}).get("colors", {}).get("background")
               or "#0E0E10").lstrip("#")
@@ -98,17 +117,20 @@ class AssetsStage(BaseStage):
         return {"path": str(dest.relative_to(project.path)),
                 "kind": "image", "origin": "fallback_color"}
 
-    def _pexels(self, query: str, dest_base: Path) -> Path | None:
+    # -- proveedores ---------------------------------------------------------
+    def _pexels(self, query: str, dest_base: Path, videos: bool) -> Path | None:
         if not config.PEXELS_API_KEY:
             return None
         headers = {"Authorization": config.PEXELS_API_KEY}
         try:
-            r = requests.get(PEXELS_VIDEOS, headers=headers, timeout=30,
-                             params={"query": query, "per_page": 1,
-                                     "orientation": "portrait"})
-            videos = r.json().get("videos", [])
             if videos:
-                files = sorted(videos[0]["video_files"],
+                r = requests.get(PEXELS_VIDEOS, headers=headers, timeout=30,
+                                 params={"query": query, "per_page": 1,
+                                         "orientation": "portrait"})
+                items = r.json().get("videos", [])
+                if not items:
+                    return None
+                files = sorted(items[0]["video_files"],
                                key=lambda f: abs(f.get("width", 0) - 1080))
                 dest = dest_base.with_suffix(".mp4")
                 _download(files[0]["link"], dest)
@@ -117,13 +139,67 @@ class AssetsStage(BaseStage):
                              params={"query": query, "per_page": 1,
                                      "orientation": "portrait"})
             photos = r.json().get("photos", [])
-            if photos:
-                dest = dest_base.with_suffix(".jpg")
-                _download(photos[0]["src"]["large2x"], dest)
-                return dest
+            if not photos:
+                return None
+            dest = dest_base.with_suffix(".jpg")
+            _download(photos[0]["src"]["large2x"], dest)
+            return dest
         except Exception:
-            return None  # cualquier fallo de stock cae al fondo de color
+            return None  # cualquier fallo de stock cae al siguiente recurso
+
+    def _ai_image(self, prompt: str, dest_base: Path) -> Path | None:
+        cfg = config.IMAGES or {}
+        provider = cfg.get("provider", "off")
+        width = cfg.get("width", 1080)
+        height = cfg.get("height", 1920)
+        try:
+            if provider == "hf" and config.HF_TOKEN:
+                return self._hf_image(prompt, dest_base, cfg, width, height)
+            if provider == "pollinations" and config.POLLINATIONS_KEY:
+                return self._pollinations_image(prompt, dest_base, cfg, width, height)
+        except Exception:
+            return None  # cualquier fallo de IA cae al siguiente recurso
         return None
+
+    def _hf_image(self, prompt: str, dest_base: Path, cfg: dict,
+                  width: int, height: int) -> Path | None:
+        model = cfg.get("hf", {}).get("model", "black-forest-labs/FLUX.1-schnell")
+        timeout = cfg.get("hf", {}).get("timeout_s", 180)
+        r = requests.post(
+            HF_URL.format(model=model),
+            headers={"Authorization": f"Bearer {config.HF_TOKEN}"},
+            json={"inputs": f"{prompt}, vertical 9:16"},
+            timeout=timeout,
+        )
+        if r.status_code != 200 or "image" not in r.headers.get("content-type", ""):
+            return None
+        dest = dest_base.with_suffix(".png")
+        dest.write_bytes(r.content)
+        return dest if dest.stat().st_size > 10_000 else None
+
+    def _pollinations_image(self, prompt: str, dest_base: Path, cfg: dict,
+                            width: int, height: int) -> Path | None:
+        model = cfg.get("pollinations", {}).get("model", "flux")
+        timeout = cfg.get("pollinations", {}).get("timeout_s", 180)
+        r = requests.post(
+            POLLINATIONS_URL,
+            headers={"Authorization": f"Bearer {config.POLLINATIONS_KEY}"},
+            json={"model": model, "prompt": prompt,
+                  "size": f"{width}x{height}", "n": 1,
+                  "response_format": "b64_json"},
+            timeout=timeout,
+        )
+        if r.status_code != 200:
+            return None
+        data = (r.json().get("data") or [{}])[0]
+        dest = dest_base.with_suffix(".png")
+        if data.get("b64_json"):
+            dest.write_bytes(base64.b64decode(data["b64_json"]))
+        elif data.get("url"):
+            _download(data["url"], dest)
+        else:
+            return None
+        return dest if dest.stat().st_size > 10_000 else None
 
     def _music(self, project: Project, assets_dir: Path) -> dict | None:
         lib = config.ROOT / "assets" / "music"

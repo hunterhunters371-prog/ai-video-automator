@@ -164,7 +164,7 @@ Reglas:
 |---|---|---|---|
 | LLM | `llm.complete(prompt) → str` | OpenAI/Anthropic vía `.env` | modelos locales |
 | Voz TTS | `tts.speak(text, voice_cfg) → mp3` | `edge-tts` (gratuito) | ElevenLabs, OpenAI TTS |
-| Imágenes | `images.generate(prompt) → png` | stock (Pexels) + material del usuario | SDXL / Flux / DALL·E |
+| Imágenes | `images.generate(prompt) → png` | stock (Pexels) + IA gratis (HF Inference / Pollinations, `configs/images.yml`) + material del usuario | SDXL / Flux / DALL·E |
 | Video IA | `video.generate(prompt) → mp4` | — (no en MVP) | Runway / Pika / Kling |
 | Subtítulos | `transcribe(audio) → words[]` | `faster-whisper` (tiempos por palabra) | — |
 | Música/SFX | biblioteca local | `assets/music` con licencia | generación con IA |

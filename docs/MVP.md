@@ -69,3 +69,9 @@ produce un video vertical 9:16 (~30 s) con:
   `src/config.py` + `src/llm.py` + `src/websearch.py`; etapas research → qc).
   **Pendiente de verificación**: primera ejecución real con las claves del
   usuario (`docs/SETUP.md`). No verificado hasta generar el primer Short.
+- ASSETS con imágenes IA gratuitas (mismo día): proveedores sin tarjeta
+  (HF Inference con `HF_TOKEN`, Pollinations con `POLLINATIONS_KEY`; ver
+  `configs/images.yml`). Orden por escena: ruta explícita → video stock →
+  imagen IA → foto stock → fondo de color. El endpoint exacto de la API
+  nueva de Pollinations quedó marcado `[no verificado]` en `assets.py`:
+  ajustarlo si falla en la primera ejecución real.

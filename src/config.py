@@ -23,11 +23,14 @@ def load_yaml(rel: str) -> dict:
 PIPELINE = load_yaml("configs/pipeline.yml")
 PLATFORMS = load_yaml("configs/platforms.yml")
 VOICE = load_yaml("configs/voice.yml")
+IMAGES = load_yaml("configs/images.yml")
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+POLLINATIONS_KEY = os.getenv("POLLINATIONS_KEY", "")
 
 
 def load_template(name: str) -> dict:

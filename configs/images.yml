@@ -1,0 +1,18 @@
+# Generación de imágenes con IA para la etapa ASSETS
+# provider:
+#   hf           — Hugging Face Inference API. Token gratis en .env (HF_TOKEN). Sin tarjeta.
+#   pollinations — Pollinations.ai. Llave gratis en .env (POLLINATIONS_KEY). Sin tarjeta.
+#                  OJO: endpoint exacto marcado [no verificado] en assets.py.
+#   off          — desactiva la IA (ASSETS pasa de stock directo al fondo de color)
+provider: hf
+
+width: 1080
+height: 1920
+
+hf:
+  model: black-forest-labs/FLUX.1-schnell   # rápido y disponible en el free tier
+  timeout_s: 180
+
+pollinations:
+  model: flux
+  timeout_s: 180
