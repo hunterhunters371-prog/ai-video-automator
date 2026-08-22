@@ -6,6 +6,10 @@ con extensión de video). Si falta alguno: escribe `manifiesto_animacion.json`
 + las guías de prompts y PAUSA el proyecto (PipelinePaused). Si están todos,
 completa la etapa y EDITING los monta.
 
+Los clips llegan a mano (descarga del navegador + Upload), así que aquí se
+comprueban de verdad con ffprobe: un archivo corrupto o sin pista de vídeo
+debe detectarse al recibirlo, no tres etapas después en RENDERING.
+
 Proveedor preferido en configs/pipeline.yml → animate.provider:
   meta  — Meta AI / Vibes (meta.ai): prompt "Imagina..." → imagen → Animate
           (+ lip sync). Gratis durante el rollout, con tope diario y posible
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import unicodedata
 from pathlib import Path
 
@@ -32,6 +37,7 @@ from .base import BaseStage, PipelinePaused
 from .script import NARRATOR
 
 MIN_CLIP_BYTES = 100_000  # un mp4 válido de 4-8 s pesa mucho más que esto
+MIN_CLIP_S = 0.5
 CLIP_EXTS = (".mp4", ".mov", ".webm", ".mkv")
 GUIAS = {"meta": "prompts_meta.md", "flow": "prompts_flow.md"}
 
@@ -124,22 +130,58 @@ def _clave(nombre: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", base.lower())
 
 
+def _revisar(path: Path) -> str | None:
+    """Motivo por el que el archivo NO sirve como clip, o None si está bien.
+
+    Sin esto, una descarga a medias o un archivo que no es vídeo se cuela hasta
+    RENDERING y revienta con un error de ffmpeg, después de todo el trabajo
+    manual de generar y subir.
+    """
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height:format=duration",
+             "-of", "json", str(path)],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return None  # sin ffprobe no bloqueamos: ya avisa la etapa de render
+    if r.returncode != 0:
+        return "ffprobe no puede leerlo (¿descarga incompleta?)"
+    try:
+        data = json.loads(r.stdout or "{}")
+    except json.JSONDecodeError:
+        return "ffprobe devolvió algo ilegible"
+    if not (data.get("streams") or []):
+        return "no tiene pista de vídeo"
+    try:
+        dur = float((data.get("format") or {}).get("duration") or 0)
+    except (TypeError, ValueError):
+        dur = 0.0
+    if dur < MIN_CLIP_S:
+        return f"dura solo {dur:.1f}s"
+    return None
+
+
 def _find_clip(clips_dir: Path, stem: str) -> Path | None:
-    """Clip de `stem` en cualquier extensión de video, tolerante con el nombre."""
+    """Clip de `stem` en cualquier extensión de vídeo, tolerante con el nombre."""
     objetivo = _clave(stem)
-    pequenos = []
+    rechazados: list[tuple[Path, str]] = []
     for cand in sorted(clips_dir.iterdir()):
         if not cand.is_file() or cand.suffix.lower() not in CLIP_EXTS:
             continue
         if _clave(cand.stem) != objetivo:
             continue
         if cand.stat().st_size < MIN_CLIP_BYTES:
-            pequenos.append(cand)  # descarga cortada: avisar, no ignorar
+            rechazados.append((cand, f"pesa solo {cand.stat().st_size // 1024} KB"))
+            continue
+        problema = _revisar(cand)
+        if problema:
+            rechazados.append((cand, problema))
             continue
         return cand
-    for p in pequenos:
-        print(f"  !! {p.name} pesa solo {p.stat().st_size // 1024} KB: parece una "
-              f"descarga incompleta, lo cuento como faltante", flush=True)
+    for path, motivo in rechazados:
+        print(f"  !! {path.name}: {motivo} — lo cuento como faltante", flush=True)
     return None
 
 

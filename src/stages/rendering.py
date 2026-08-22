@@ -3,9 +3,14 @@
 Entrada: edit_plan.json.
 Salida:  renders/<id>.mp4 (1080x1920, fps de plantilla) + thumbnails/<id>.png.
 
-Notas M1:
+Notas:
 - Cortes duros entre segmentos (concat). Transiciones xfade quedan para M2.
 - Imágenes con ken_burns vía zoompan (d=1, zoom por frame de salida).
+- Los clips de vídeo se leen con `-stream_loop` a nivel de demuxer: si duran
+  menos que su línea se repiten sin coste de memoria (el filtro `loop`
+  equivalente guarda el clip descomprimido en RAM).
+- Todas las ramas terminan en yuv420p: `concat` exige el mismo formato de
+  píxel en sus entradas y aquí se mezclan imágenes con vídeo.
 - Ducking de música con sidechaincompress (sidechain = voz).
 - SFX: el plan los lista; se mezclan cuando exista la biblioteca assets/sfx/.
 """
@@ -50,7 +55,12 @@ class RenderingStage(BaseStage):
                 args += ["-loop", "1", "-framerate", str(fps),
                          "-t", f"{length:.2f}", "-i", seg["source"]]
             else:
-                args += ["-i", seg["source"]]
+                # Repetición a nivel de demuxer: si el clip dura menos que su
+                # línea se repite, y si dura más se corta en -t. El filtro
+                # `loop` hacía lo mismo guardando el clip entero descomprimido
+                # en memoria (~750 MB por clip de 8 s a 1080x1920).
+                args += ["-stream_loop", "-1", "-t", f"{length:.2f}",
+                         "-i", seg["source"]]
         voice_idx = len(segs)
         args += ["-i", plan["audio"]["voice"]]
         music_idx = None
@@ -63,8 +73,7 @@ class RenderingStage(BaseStage):
             length = seg["t"][1] - seg["t"][0]
             chain = f"[{i}:v]"
             if seg["kind"] == "video":
-                chain += (f"loop=-1:size=2147483647,trim=0:{length:.2f},"
-                          f"setpts=PTS-STARTPTS,"
+                chain += (f"trim=0:{length:.2f},setpts=PTS-STARTPTS,"
                           f"scale={w}:{h}:force_original_aspect_ratio=increase,"
                           f"crop={w}:{h},fps={fps},")
             elif seg.get("animation") in ZOOM_IN | ZOOM_OUT:
@@ -78,7 +87,9 @@ class RenderingStage(BaseStage):
             else:
                 chain += (f"scale={w}:{h}:force_original_aspect_ratio=increase,"
                           f"crop={w}:{h},fps={fps},")
-            filters.append(chain + f"setsar=1[v{i}]")
+            # format explicito: concat exige el mismo formato de pixel en todas
+            # sus entradas y aqui se mezclan imagenes (rgb) con clips (yuv420p).
+            filters.append(chain + f"format=yuv420p,setsar=1[v{i}]")
 
         concat = "".join(f"[v{i}]" for i in range(len(segs)))
         filters.append(
