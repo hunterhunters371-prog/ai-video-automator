@@ -15,34 +15,33 @@ frutinovelas / mini historias con un personaje que habla** para YouTube Shorts
 10-30 s). Brecha técnica frente al pipeline actual — 3 capacidades nuevas:
 
 1. **Personaje consistente**: la misma fruta/personaje en todas las escenas y
-   episodios. Estrategia base: descriptor fijo + hoja de personaje reutilizable
-   [por diseñar].
+   episodios. Estrategia base: descriptor fijo + hoja de personaje reutilizable.
 2. **Diálogo multi-voz**: guion por líneas de personaje; edge-tts tiene voces
    ES suficientes para asignar una por personaje (gratis, trivial).
 3. **Animación / boca que habla** (lo más caro en cómputo):
-   - Open source: SadTalker (Apache-2.0, foto+audio→cabeza parlante, el
-     clásico), MuseTalk (mejor calidad), Wav2Lip (rápido, básico). Todos
-     requieren GPU → **Colab free** (Cloud Shell NO tiene GPU; alineado con la
-     regla de Colab como cómputo legítimo).
-   - HF Inference Providers: la tabla oficial incluye la tarea text-to-video
-     con algunos proveedores; el free tier mensual es pequeño y el video lo
-     agota rápido [no verificado contra la cuenta].
+   - **ELEGIDO**: SadTalker (Apache-2.0, foto+audio→cabeza parlante) en Colab
+     free; MuseTalk queda para v2. Cloud Shell NO tiene GPU → ANIMATE corre en
+     Colab con 2 transferencias manuales de zip por video.
+   - HF Inference Providers tiene tarea text-to-video con algunos proveedores;
+     free tier pequeño que el video agota rápido [no verificado]. Descartado
+     como v1 por costo, queda como opción de pago futura.
    - La comunidad hace frutinovelas a mano con Google Flow (gratis con cuenta
-     Google). NO automatizar Flow con navegador remoto (ToS); solo referencia
-     de estilo.
+     Google). NO automatizar Flow con navegador remoto (ToS); solo referencia.
+   - **Formato elegido: narrador + escenas de personajes.** Diseño completo en
+     `docs/M2-frutinovelas.md`.
 
-## Estado actual (22 ago 2026, ~22:00 UTC)
+## Estado actual (22 ago 2026, ~22:20 UTC)
 
-**M1 CERRADO y la generación de imágenes IA VERIFICADA en producción.**
+**M1 CERRADO y la generación de imágenes IA VERIFICADA en producción. M2
+(frutinovelas) DISEÑADO, falta construirlo.**
 
 - `video-0001` COMPLETED (89 s): primer Short de punta a punta, pero con las 6
-  escenas en `fallback_color` (destapó el bug de imágenes). Se conserva como
-  primer éxito histórico.
+  escenas en `fallback_color` (destapó el bug de imágenes). Primer éxito
+  histórico.
 - `video-0002` COMPLETED (~121 s): **las 5 escenas en `ia:hf`** — el fix de
-  imágenes funciona contra la cuenta real. También quedaron verificados los
-  avisos nuevos (`[!] PEXELS_API_KEY vacía`) y el progreso por etapa en
-  consola. Idea usada: el placeholder literal "tu idea aquí" → fue video de
-  prueba; el primero con idea real será video-0003.
+  imágenes funciona contra la cuenta real. Verificados también los avisos
+  nuevos (`[!] PEXELS_API_KEY vacía`) y el progreso por etapa en consola. Fue
+  video de prueba con el placeholder literal "tu idea aquí".
 - Token HF fine-grained CON el permiso «Make calls to Inference Providers»:
   validado en ambas vías (LLM 200 OK + imágenes 200 OK). Un token de solo
   *read* da 401/403.
@@ -81,18 +80,25 @@ frutinovelas / mini historias con un personaje que habla** para YouTube Shorts
 
 ## Cómo continuar (siguiente paso real)
 
-1. `python -m src.main new "<idea real>"` → video-0003, el primero con tema de
-   verdad. No usar `resume` sobre videos COMPLETED: no re-ejecuta etapas.
-2. Comprobación posterior:
-   `grep -o '"origin": "[^"]*"' projects/video-0003/assets_map.json`
-   → debe decir `ia:hf`, no `fallback_color`.
-3. Opcional (2 min, gratis): `PEXELS_API_KEY` en `.env` (docs/SETUP.md §3)
-   habilita video y foto de stock como recurso intermedio y elimina el aviso
-   `[!] PEXELS_API_KEY vacía`.
-4. Para VER un video: menú ⋮ de Cloud Shell → **Download** → pegar la ruta
-   (p.ej. `/home/dayalert7/ai-video-automator/renders/video-0002.mp4`) en el
-   cuadro del diálogo, NUNCA en el prompt. O: Open Editor → árbol de archivos
-   → clic derecho sobre el .mp4 → Download.
+Construir M2 en el orden de `docs/M2-frutinovelas.md`:
+
+1. SCRIPT modo historia + plantilla `templates/frutinovela/` + VOICE multi-voz.
+2. PERSONAJE (hoja consistente).
+3. Export `para_colab.zip` + pausa con instrucciones.
+4. `notebooks/animar.ipynb` (SadTalker en Colab).
+5. Import de clips + `resume`.
+6. Subtítulos por personaje + check QC de clips.
+
+Operativa del pipeline actual (sigue vigente para el modo carrusel):
+
+- `python -m src.main new "<idea>"` → video nuevo; `resume` no re-ejecuta
+  etapas completadas.
+- Comprobación de orígenes:
+  `grep -o '"origin": "[^"]*"' projects/<id>/assets_map.json`
+- Opcional: `PEXELS_API_KEY` en `.env` (docs/SETUP.md §3) para stock real.
+- Para VER un video: menú ⋮ de Cloud Shell → **Download** → pegar la ruta en
+  el cuadro del diálogo, NUNCA en el prompt. O: Open Editor → árbol → clic
+  derecho sobre el .mp4 → Download. Subir archivos: menú ⋮ → **Upload**.
 
 ## Reglas aprendidas — no repetir
 
@@ -120,16 +126,9 @@ frutinovelas / mini historias con un personaje que habla** para YouTube Shorts
 8. Endpoints solo desde doc viva. `api-inference.huggingface.co` y
    `hf-inference`+FLUX son ejemplos de rutas que murieron sin aviso.
 
-## Pendientes (M2 orientado a frutinovelas)
+## Pendientes transversales
 
-- **Ruta de animación por elegir con el usuario**: (a) gratis total = Colab +
-  SadTalker/MuseTalk; (b) primero personaje consistente + multi-voz + movimiento
-  Ken Burns sin lip-sync (sale rápido, lip-sync después); (c) APIs de pago
-  (máxima calidad).
-- SCRIPT en modo diálogo con reparto de voces por personaje (edge-tts).
-- PERSONAJE: hoja de personaje consistente (descriptor fijo + reutilización).
-- Siguen útiles de la lista anterior: transiciones xfade, SFX, QC con LLM,
-  verificación de las 8 plantillas.
+- Transiciones xfade, SFX, QC con LLM, verificación de las 8 plantillas.
 - Confirmar endpoints de Pollinations contra la doc viva.
 - Colab: SOLO como entorno de render del pipeline (uso legítimo); NUNCA
   navegador remoto (los ToS de Colab lo prohíben → suspenderían la cuenta Google
