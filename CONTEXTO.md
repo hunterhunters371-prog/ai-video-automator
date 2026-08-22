@@ -65,12 +65,18 @@ docs/ARQUITECTURA.md, docs/MVP.md, docs/SETUP.md.
 3. Opcional (2 min, gratis): `PEXELS_API_KEY` en `.env` (docs/SETUP.md §3)
    habilita video y foto de stock como recurso intermedio y elimina el aviso
    `[!] PEXELS_API_KEY vacía`.
+4. Para VER un video: menú ⋮ de Cloud Shell → **Download** → pegar la ruta
+   (p.ej. `/home/dayalert7/ai-video-automator/renders/video-0002.mp4`) en el
+   cuadro del diálogo, NUNCA en el prompt. O: Open Editor → árbol de archivos
+   → clic derecho sobre el .mp4 → Download.
 
 ## Reglas aprendidas — no repetir
 
-1. **Cloud Shell es una terminal remota: NO abre páginas web.** Pegar una URL en
-   el prompt solo produce `Exit 127`. Los enlaces (crear tokens, etc.) van en el
-   navegador del usuario.
+1. **Cloud Shell es una terminal remota: NO abre páginas web NI ejecuta
+   archivos.** Pegar una URL da `Exit 127`; pegar la ruta de un .mp4 da
+   `Permission denied` (bash intenta ejecutarlo). Los enlaces van en el
+   navegador y las rutas de descarga van en el cuadro del menú ⋮ → Download,
+   nunca en el prompt.
 2. Al pegar en la terminal, copiar solo el bloque de comando. Arrastrar salida
    anterior produce cascadas de `command not found` (inofensivas pero confusas)
    y una comilla suelta deja el shell colgado en `>` (salir con Ctrl+C).
