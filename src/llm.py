@@ -2,9 +2,9 @@
 
 Sin SDK: HTTP vía `requests`. Proveedores:
 - openai / anthropic: pago por uso (requieren tarjeta).
-- github: GitHub Models — gratis sin tarjeta (GITHUB_MODELS_TOKEN).
 - hf: Hugging Face Inference — gratis sin tarjeta (HF_TOKEN, el mismo de imágenes).
 - pollinations: Pollinations.ai — gratis sin tarjeta (POLLINATIONS_KEY).
+- github: RETIRADO — GitHub Models murió el 30-jul-2026 (HTTP 410 permanente).
 Interfaz única (ARQUITECTURA.md §6): `llm.complete(prompt) -> str`.
 """
 from __future__ import annotations
@@ -24,12 +24,6 @@ ANTHROPIC_MODEL = "claude-3-5-haiku-20241022"
 # Proveedores OpenAI-compatibles y gratis (sin tarjeta).
 # Si un endpoint cambia de catálogo (404 de modelo), ajustar `model` aquí.
 COMPAT_PROVIDERS = {
-    "github": {
-        "url": "https://models.github.ai/inference/chat/completions",
-        "key": lambda: config.GITHUB_MODELS_TOKEN,
-        "model": "openai/gpt-4o-mini",  # catálogo: github.com/marketplace/models
-        "help": "gratis sin tarjeta: github.com/settings/tokens",
-    },
     "hf": {
         "url": "https://router.huggingface.co/v1/chat/completions",
         "key": lambda: config.HF_TOKEN,
@@ -52,6 +46,12 @@ class LLMError(Exception):
 def complete(prompt: str, system: str = "", json_mode: bool = False,
              temperature: float = 0.7) -> str:
     provider = config.LLM_PROVIDER
+    if provider == "github":
+        raise LLMError(
+            "GitHub Models fue retirado permanentemente el 30-jul-2026 "
+            "(github.blog/changelog/2026-07-30-github-models-is-now-retired). "
+            "Cambia de proveedor con: sh setup-env.sh"
+        )
     if provider == "openai":
         return _openai(prompt, system, json_mode, temperature)
     if provider == "anthropic":
@@ -60,7 +60,7 @@ def complete(prompt: str, system: str = "", json_mode: bool = False,
         return _openai_compatible(provider, prompt, system, json_mode, temperature)
     raise LLMError(
         f"LLM_PROVIDER desconocido: {provider!r} "
-        f"(usa openai | anthropic | github | hf | pollinations)"
+        f"(usa openai | anthropic | hf | pollinations)"
     )
 
 

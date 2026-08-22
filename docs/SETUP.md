@@ -42,21 +42,22 @@ sudo dnf install ffmpeg        # Fedora (RPM Fusion)
 
 ## 2. Clave de LLM (obligatoria — elige UNA)
 
+> **Ojo:** GitHub Models fue **retirado permanentemente el 30-jul-2026**
+> (<https://github.blog/changelog/2026-07-30-github-models-is-now-retired>).
+> Ya no es opción; el código lo rechaza con ese aviso.
+
+**Atajo sin editores:** `sh setup-env.sh` configura proveedor + token sin nano
+(el token se pega en lectura oculta: no se muestra ni queda en el historial).
+
 ### Gratis, sin tarjeta
 
-**Opción A: GitHub Models** (recomendada si ya tienes cuenta de GitHub)
-
-1. Entra en <https://github.com/settings/tokens> → **Generate new token** (classic basta).
-2. En `.env`: `GITHUB_MODELS_TOKEN=<tu token>` y `LLM_PROVIDER=github`.
-3. Límite gratuito: decenas de llamadas al día — cada video usa ~3 (research, script, storyboard), alcanza para varios videos diarios.
-
-**Opción B: Hugging Face** (un solo token sirve para LLM **e imágenes IA**)
+**Opción A: Hugging Face** (recomendada — un solo token sirve para LLM **e imágenes IA**)
 
 1. Token gratis en <https://huggingface.co/settings/tokens> (permiso *read* basta).
 2. En `.env`: `HF_TOKEN=<tu token>` y `LLM_PROVIDER=hf`.
-3. El mismo token además activa las imágenes IA en ASSETS (ver `configs/images.yml`).
+3. El mismo token activa las imágenes IA en ASSETS (ver `configs/images.yml`).
 
-**Opción C: Pollinations**
+**Opción B: Pollinations**
 
 1. Llave gratis en <https://enter.pollinations.ai>.
 2. En `.env`: `POLLINATIONS_KEY=<tu llave>` y `LLM_PROVIDER=pollinations`.
@@ -64,7 +65,7 @@ sudo dnf install ffmpeg        # Fedora (RPM Fusion)
 
 ### De pago (mayor calidad)
 
-**Opción D: OpenAI**
+**Opción C: OpenAI**
 
 1. Entra en <https://platform.openai.com/api-keys> e inicia sesión (o crea cuenta).
 2. Pulsa **Create new secret key**, dale un nombre (ej. `ai-video-automator`).
@@ -74,7 +75,7 @@ sudo dnf install ffmpeg        # Fedora (RPM Fusion)
 
 Referencia oficial: <https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key>
 
-**Opción E: Anthropic (Claude)**
+**Opción D: Anthropic (Claude)**
 
 1. Entra en <https://platform.claude.com/> e inicia sesión (o crea cuenta).
 2. Ve a **Settings → API keys**: <https://platform.claude.com/settings/keys>
