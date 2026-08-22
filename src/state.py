@@ -6,8 +6,11 @@ repetir trabajo ya completado.
 
 Estados:
     IDEA → RESEARCH → SCRIPT → STORYBOARD → ASSETS → VOICE
-         → EDITING → RENDERING → QC → COMPLETED
+         → ANIMATE → EDITING → RENDERING → QC → COMPLETED
                                     ↘ FAILED (reanudable con `resume`)
+
+ANIMATE (M2) es no-op en modo carrusel; en modo historia puede PAUSAR el
+proyecto (PipelinePaused) a la espera de clips generados manualmente.
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ class Stage(str, Enum):
     STORYBOARD = "STORYBOARD"
     ASSETS = "ASSETS"
     VOICE = "VOICE"
+    ANIMATE = "ANIMATE"
     EDITING = "EDITING"
     RENDERING = "RENDERING"
     QC = "QC"
@@ -40,6 +44,7 @@ PIPELINE_ORDER: list[Stage] = [
     Stage.STORYBOARD,
     Stage.ASSETS,
     Stage.VOICE,
+    Stage.ANIMATE,
     Stage.EDITING,
     Stage.RENDERING,
     Stage.QC,
@@ -88,6 +93,12 @@ class Project:
     def load(cls, root: Path, project_id: str) -> "Project":
         path = root / "projects" / project_id
         data = json.loads((path / "project.json").read_text(encoding="utf-8"))
+        # Proyectos viejos COMPLETED anteriores a etapas nuevas (p.ej. ANIMATE):
+        # se les da por completada la etapa para que `resume` no los reabra.
+        if data.get("state") == Stage.COMPLETED.value:
+            for st in PIPELINE_ORDER:
+                if st.value not in data["completed"]:
+                    data["completed"].append(st.value)
         return cls(project_id, path, data)
 
     # -- checkpoints ------------------------------------------------------

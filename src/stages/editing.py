@@ -1,9 +1,13 @@
 """EDITING: subtítulos por palabra (whisper) + edit_plan.json sincronizado.
 
-Entrada: storyboard.json + voice.mp3 + assets_map.json.
+Entrada: storyboard.json + voice.mp3 + assets_map.json (+ voice/lines.json y
+         clips/ en modo historia M2).
 Salida:  subtitles.ass/.srt (grupos de 2-4 palabras, keywords resaltadas,
          posición en safe zones) y edit_plan.json re-sincronizado con la
          duración real del audio.
+Modo historia: un segmento por LÍNEA con los tiempos reales del audio
+         multi-voz; los diálogos usan el clip animado del personaje y las
+         líneas del narrador la imagen de su escena.
 Prioridad: ritmo y retención — corte visual cada 2-4 s.
 """
 from __future__ import annotations
@@ -16,6 +20,7 @@ from pathlib import Path
 from .. import config
 from ..state import Project, Stage
 from .base import BaseStage, StageError
+from .script import NARRATOR
 from .storyboard import parse_t
 
 ASS_HEADER = """[Script Info]
@@ -50,7 +55,6 @@ class EditingStage(BaseStage):
         if duration <= 0:
             raise StageError("falta voice_duration_s en project.json")
 
-        times = _resync(board["segments"], duration)
         words = _transcribe(voice, project.data.get("language", "es"))
         keywords = _keywords(board["segments"])
         ass_text, srt_text = _subtitles(words, keywords, template)
@@ -61,13 +65,12 @@ class EditingStage(BaseStage):
         shutil.copy2(project.path / "subtitles.ass", subdir / f"{project.project_id}.ass")
         shutil.copy2(project.path / "subtitles.srt", subdir / f"{project.project_id}.srt")
 
-        zones = config.PLATFORMS["safe_zones"]
-        margin_v = int((zones["captions_bottom_min"] + zones["captions_bottom_max"]) / 2 * 1920)
-        plan = {
-            "fps": template.get("fps", 30),
-            "resolution": template.get("resolution", [1080, 1920]),
-            "duration_s": duration,
-            "segments": [
+        lines_file = project.path / "voice" / "lines.json"
+        if lines_file.exists():  # modo historia (M2)
+            segments_plan = _plan_historia(project, board, amap, duration)
+        else:  # modo carrusel
+            times = _resync(board["segments"], duration)
+            segments_plan = [
                 {
                     "index": i,
                     "source": amap[f"seg{i:02d}"]["path"],
@@ -78,7 +81,15 @@ class EditingStage(BaseStage):
                     "sfx": seg.get("sfx"),
                 }
                 for i, (seg, (s, e)) in enumerate(zip(board["segments"], times))
-            ],
+            ]
+
+        zones = config.PLATFORMS["safe_zones"]
+        margin_v = int((zones["captions_bottom_min"] + zones["captions_bottom_max"]) / 2 * 1920)
+        plan = {
+            "fps": template.get("fps", 30),
+            "resolution": template.get("resolution", [1080, 1920]),
+            "duration_s": duration,
+            "segments": segments_plan,
             "audio": {
                 "voice": "assets/voice.mp3",
                 "music": amap.get("music", {}).get("path"),
@@ -91,6 +102,48 @@ class EditingStage(BaseStage):
         }
         plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
         return {"edit_plan": "edit_plan.json", "subtitles": "subtitles.ass"}
+
+
+def _plan_historia(project: Project, board: dict, amap: dict,
+                   duration: float) -> list[dict]:
+    """Un segmento por línea de diálogo/narración con los tiempos REALES del
+    audio multi-voz (voice/lines.json). ANIMATE garantiza que toda línea de
+    personaje tiene su clip en clips/; si falta, cae a la imagen de la escena."""
+    lines = json.loads(
+        (project.path / "voice" / "lines.json").read_text(encoding="utf-8")
+    )
+    segs = board["segments"]
+    escenas = sorted({ln["escena"] for ln in lines})
+    plan = []
+    for i, ln in enumerate(lines):
+        pos = min(escenas.index(ln["escena"]), len(segs) - 1)
+        seg = segs[pos]
+        stem = Path(ln["archivo"]).stem
+        clip = project.path / "clips" / f"{stem}.mp4"
+        if ln["quien"] != NARRATOR and clip.exists() and clip.stat().st_size > 0:
+            source, kind, animation = str(clip.relative_to(project.path)), "video", "static"
+        else:
+            entry = amap.get(f"seg{pos:02d}")
+            if not entry:
+                raise StageError(
+                    f"assets_map sin recurso para la escena {ln['escena']} ({f'seg{pos:02d}'})"
+                )
+            source, kind = entry["path"], entry["kind"]
+            animation = seg.get("animation", "static")
+        plan.append({
+            "index": i,
+            "source": source,
+            "kind": kind,
+            "t": [float(ln["offset_s"]),
+                  round(float(ln["offset_s"]) + float(ln["dur_s"]), 2)],
+            "animation": animation,
+            "transition_in": "cut",
+            "sfx": seg.get("sfx"),
+            "quien": ln["quien"],
+        })
+    if plan and plan[-1]["t"][1] < duration:  # cubrir colas del audio
+        plan[-1]["t"][1] = round(duration, 2)
+    return plan
 
 
 def _resync(segments: list[dict], duration: float) -> list[tuple[float, float]]:

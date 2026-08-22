@@ -1,11 +1,31 @@
 # M2 — Frutinovelas: personajes que hablan (diseño)
 
-Decisiones del 22-ago-2026: **ruta gratis total** (Colab + SadTalker; MuseTalk
-en v2) y **formato narrador + escenas de personajes**. Costo objetivo: $0.
+Decisiones del 22-ago-2026: **ruta gratis** y **formato narrador + escenas de
+personajes**. Ruta de clips elegida tras verificar el mercado:
+
+- **v1 (hoy, gratis): Google Flow MANUAL.** 50 créditos/día gratis, Veo 3.1
+  Lite cuesta 10 por clip → ~5 clips/día (un episodio diario). Ingredients
+  (hasta 3 imágenes de referencia, 9:16) da la consistencia de personaje. El
+  pipeline genera `prompts_flow.md` con el prompt detallado de cada clip y
+  PAUSA en ANIMATE; el usuario sube los clips y `resume` monta todo.
+- **v2 (gratis, lip-sync exacto): Colab + SadTalker** contra NUESTRO audio
+  TTS. Cloud Shell no tiene GPU → notebook `notebooks/animar.ipynb`.
+- **Opción de pago (100% automática): Gemini API con Veo 3.1 Lite**, ~$0.05/s
+  a 720p (≈ $1.5-2 por episodio). Requiere billing en AI Studio; se enchufa
+  como proveedor de ANIMATE sin tocar el resto.
+- **Descartado: Meta/Vibes.** Sin API pública para video (Movie Gen no tiene
+  acceso de desarrollador): solo manual desde la app → no integrable.
+- **NUNCA** automatizar la web de Flow/Meta con el navegador remoto (ToS;
+  arriesga la cuenta Google que sostiene Cloud Shell y Colab).
+
+**Decisión de audio (22-ago):** los clips NO aportan la voz. El master de
+audio es nuestro TTS (edge-tts multi-voz) y RENDERING ignora el audio de los
+videos (concat a=0). Consecuencia: el lip-sync v1 es aproximado (el clip
+actúa, nuestra voz habla); el exacto llega en v2 con SadTalker.
 
 ## Formato del producto
 
-Mini historias verticales 9:16 de 10-40 s: un narrador conduce la trama y los
+Mini historias verticales 9:16 de ~30 s: un narrador conduce la trama y los
 personajes (frutas/objetos antropomórficos con cara) hablan en escenas clave.
 Subtítulos siempre, con color por personaje. Destino: YouTube Shorts.
 
@@ -13,96 +33,64 @@ Subtítulos siempre, con color por personaje. Destino: YouTube Shorts.
 
 ```
 IDEA → RESEARCH → SCRIPT(historia) → PERSONAJE → STORYBOARD → ASSETS
-     → VOICE(multi-voz) → ANIMATE(Colab) → EDITING → RENDERING → QC
+     → VOICE(multi-voz) → ANIMATE(Flow manual/Colab) → EDITING → RENDERING → QC
 ```
 
 ### SCRIPT — modo historia
 
-El LLM devuelve JSON con:
+`mode: historia` en la plantilla. El LLM devuelve `personajes[]` (nombre,
+especie, personalidad, descriptor visual FIJO, voz edge-tts) y `lineas[]`
+(quien/texto/emocion/escena, 8-14 líneas, giro obligatorio, réplica y
+contrarréplica, gancho de serie). Rellena además `narration` y `beats` para
+que STORYBOARD siga funcionando. Plantilla: `templates/frutinovela/`.
 
-- `personajes[]`: nombre, especie ("limón", "taza"), `descriptor` visual FIJO
-  (se repite palabra por palabra en cada prompt → coherencia), `voz` edge-tts
-  asignada (pool por defecto en `script.py`; sobreescribible con
-  `character_voices` en configs/voice.yml). El narrador usa la voz principal.
-- `lineas[]`: `quien` (`narrador` | nombre de personaje), `texto`, `emocion`,
-  `escena` (índice). Mezcla narración y diálogo.
+### PERSONAJE — etapa nueva (pendiente)
 
-Se activa con `mode: historia` en la plantilla. La plantilla nueva vive en
-`templates/frutinovela/template.yml`; las 8 existentes siguen sirviendo para
-el modo carrusel — `--template` decide el modo. Por compatibilidad mientras
-llega ANIMATE, el script de historia también rellena `narration` y `beats`
-(una entrada por escena), así STORYBOARD/EDITING actuales no se rompen.
-
-### PERSONAJE — etapa nueva
-
-Genera la **hoja de personaje**: retrato frontal, fondo neutro, cara visible,
-con el `descriptor` fijo. Se guarda en `projects/<id>/characters/<nombre>.png`
-y se reutiliza en TODAS las escenas habladas y episodios futuros. Idempotente
-como el resto de etapas.
-
-### STORYBOARD / ASSETS
-
-Cada escena declara `fondo` (prompt IA, sin personaje) + `personaje_presente`.
-v1: la escena hablada usa directamente la hoja del personaje (primer plano);
-el fondo IA sirve para escenas del narrador. v2 [futuro]: composición del
-personaje sobre el fondo.
+En v1 su papel lo cubre el paso manual de Ingredients en Flow (la guía
+`prompts_flow.md` incluye el prompt del ingrediente por personaje). Sigue en
+el roadmap para el modo Colab: hoja de personaje reutilizable en
+`projects/<id>/characters/<nombre>.png`.
 
 ### VOICE — multi-voz
 
-Una pista por línea con la voz de su `quien` (edge-tts). Artefactos:
-`voice/l001_narrador.mp3`, `voice/l002_limon.mp3`, ... + `voice/lines.json`
-(offset y duración por línea — base del manifiesto de ANIMATE). Además se
-ensambla `assets/voice.mp3` con ffmpeg (concat + re-encode) para que EDITING
-y RENDERING actuales sigan funcionando sin cambios. Cada archivo de línea es
-idempotente: un retry solo regenera lo que falta.
+Una pista por línea con la voz de su `quien` (edge-tts): `voice/lNNN_quien.mp3`
++ `voice/lines.json` (offset y duración por línea). Además se ensambla
+`assets/voice.mp3` con ffmpeg para EDITING/RENDERING. Idempotente por archivo.
 
-### ANIMATE — etapa nueva, corre en COLAB (no en Cloud Shell)
+### ANIMATE — Flow manual (v1, construido) / Colab (v2, pendiente)
 
-Cloud Shell no tiene GPU → la etapa se divide en dos mitades:
+1. Si script es carrusel → no-op.
+2. Historia: construye `manifiesto_animacion.json` (clip ↔ línea ↔ personaje
+   ↔ contexto visual del storyboard) y verifica `clips/lNNN_quien.mp4`
+   (≥ 100 KB). Si falta alguno: escribe `prompts_flow.md` (ingredientes +
+   prompt por clip, listo para pegar) y PAUSA el proyecto (PipelinePaused —
+   NO es FAILED; `resume` vuelve exactamente a ANIMATE).
+3. Cuando los clips están, la etapa completa y EDITING los monta.
 
-1. **Export (Cloud Shell)**: al llegar a ANIMATE sin clips listos, el pipeline
-   empaqueta `projects/<id>/para_colab.zip` (hojas de personaje + audios por
-   línea + `manifiesto.json` con el mapa línea→personaje→audio) e imprime las
-   instrucciones. El proyecto queda PAUSADO (ANIMATE no completada).
-2. **Cómputo (Colab)**: `notebooks/animar.ipynb` (botón "Open in Colab" en el
-   repo): el usuario sube `para_colab.zip`, Ejecutar todo → instala SadTalker,
-   genera `clips/l002.mp4`, ... (boca sincronizada con el audio) y descarga
-   `clips.zip`.
-3. **Import (Cloud Shell)**: el usuario sube `clips.zip` (menú ⋮ → Upload),
-   `python -m src.main resume <id>` → ANIMATE verifica los clips contra el
-   manifiesto, marca completada y siguen EDITING → RENDERING → QC.
+### EDITING / RENDERING / QC
 
-Son 2 transferencias manuales por video (zip de ida, zip de vuelta). Es el
-precio de $0 con GPU gratis. Si más adelante se paga una API de lip-sync,
-ANIMATE se vuelve local sin tocar el resto del pipeline (misma interfaz de
-artefactos).
+EDITING modo historia: un segmento por LÍNEA con los tiempos reales del audio
+(`lines.json`); diálogos → su clip (`kind: video`), narrador → imagen de su
+escena (Ken Burns). RENDERING no cambia: los clips se recortan/repiten a la
+duración de la línea y su audio se ignora (el master es `voice.mp3`). QC sigue
+técnico; pendiente un check de clips y subtítulos con color por personaje.
 
-### RENDERING / QC
+## Límites honestos
 
-RENDERING monta: clips hablados + escenas de narrador (Ken Burns, ya existe) +
-narración + subtítulos ASS con color por personaje. QC suma un check: `toda
-línea de diálogo tiene su clip` (y sigue siendo técnico, no estético).
-
-## Límites honestos de la ruta gratis
-
-- Colab free: GPU T4 (~15 GB), sesiones de hasta ~12 h con posibles cortes;
-  SadTalker en T4 tarda minutos por clip corto [no verificado en esta cuenta].
-  Un episodio = 3-6 clips hablados → cabe en una sesión.
-- SadTalker tiene dependencias antiguas (torch específico): el notebook fija
-  versiones y se marca [no verificado] hasta correrlo completo una vez.
-- Coherencia de personaje = descriptor fijo + hoja reutilizada: buena, no
-  perfecta. La v2 (misma semilla / LoRA) queda fuera de M2.
+- Flow manual = ~5 clips/día gratis; clips de 4/6/8 s; el clip más largo que
+  la línea se recorta y el más corto se repite (mejor pedir 8 s).
+- Colab free: GPU T4 con sesiones de ~12 h y posibles cortes.
+- Coherencia de personaje = descriptor fijo + Ingredients: buena, no perfecta.
 
 ## Orden de construcción
 
-1. **SCRIPT modo historia + plantilla frutinovela + VOICE multi-voz —
-   CONSTRUIDO (22-ago) [no verificado en corrida real].** Probar con:
-   `python -m src.main new "<idea>" --template frutinovela`
-   y verificar `projects/<id>/voice/lines.json` (una entrada por línea con su
-   voz). El video resultante aún es visualmente carrusel: es lo esperado hasta
-   los pasos 2-4.
-2. PERSONAJE (hoja consistente).
-3. Export `para_colab.zip` + pausa con instrucciones en ANIMATE.
-4. `notebooks/animar.ipynb` (SadTalker en Colab).
-5. Import de clips + `resume`.
-6. Subtítulos por personaje + check QC de clips.
+1. ~~SCRIPT modo historia + plantilla frutinovela + VOICE multi-voz~~
+   **CONSTRUIDO (22-ago)** [no verificado en corrida real].
+2. PERSONAJE (hoja consistente) — pendiente; en v1 lo cubre Ingredients.
+3. ~~ANIMATE: manifiesto + prompts_flow.md + pausa PipelinePaused~~
+   **CONSTRUIDO (22-ago)** [no verificado].
+4. `notebooks/animar.ipynb` (SadTalker en Colab) — pendiente.
+5. ~~EDITING por línea con clips + resume~~ **CONSTRUIDO (22-ago)**
+   [no verificado].
+6. Subtítulos por personaje + check QC de clips — pendiente.
+7. Proveedor de pago Gemini API (Veo 3.1 Lite) en ANIMATE — opcional.

@@ -17,6 +17,15 @@ class StageError(Exception):
     """Error de etapa: se registra en project.json y el proyecto pasa a FAILED."""
 
 
+class PipelinePaused(Exception):
+    """Pausa intencional: falta un paso MANUAL (p.ej. generar clips en Flow).
+
+    No es un fallo: no se reintenta ni marca FAILED. El orquestador la
+    captura, deja el proyecto a la espera y `resume` continúa exactamente
+    en esta etapa cuando el paso manual está hecho.
+    """
+
+
 class BaseStage:
     stage: Stage
     timeout_s: int = 300
@@ -35,6 +44,8 @@ class BaseStage:
             try:
                 # TODO(M1): timeout real (subprocess/signal según plataforma)
                 return self.run(project)
+            except PipelinePaused:
+                raise  # pausa manual: reintentar no cambia nada
             except Exception:
                 if i >= start + self.max_retries:
                     raise

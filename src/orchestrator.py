@@ -4,6 +4,7 @@ Responsabilidades:
   - Crear proyectos y asignar IDs (video-0001, video-0002, ...).
   - Ejecutar etapas en orden guardando checkpoint tras cada una.
   - Reanudar desde el último estado completado (`resume`).
+  - Pausar limpiamente cuando una etapa pide un paso manual (PipelinePaused).
   - Registrar errores sin destruir el trabajo realizado.
   - Log por proyecto en logs/<id>.log y progreso visible en consola.
 """
@@ -15,7 +16,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .state import PIPELINE_ORDER, Project, Stage
+from .stages.animate import AnimateStage
 from .stages.assets import AssetsStage
+from .stages.base import PipelinePaused
 from .stages.editing import EditingStage
 from .stages.qc import QCStage
 from .stages.rendering import RenderingStage
@@ -30,6 +33,7 @@ STAGE_REGISTRY = {
     Stage.STORYBOARD: StoryboardStage,
     Stage.ASSETS: AssetsStage,
     Stage.VOICE: VoiceStage,
+    Stage.ANIMATE: AnimateStage,
     Stage.EDITING: EditingStage,
     Stage.RENDERING: RenderingStage,
     Stage.QC: QCStage,
@@ -40,6 +44,7 @@ STAGE_REGISTRY = {
 STAGE_HINTS = {
     Stage.EDITING: "la 1ª vez baja el modelo whisper (~150 MB): son minutos, es normal",
     Stage.ASSETS: "descarga/genera un recurso por escena",
+    Stage.ANIMATE: "clips de personaje: hoy manual (Flow), después Colab",
     Stage.RENDERING: "ffmpeg montando el video final",
 }
 
@@ -139,6 +144,14 @@ class Orchestrator:
             inicio = time.monotonic()
             try:
                 artifacts = runner().run_with_retry(project)
+            except PipelinePaused as exc:
+                # Paso manual pendiente (M2): NO es FAILED. `resume` vuelve aquí.
+                project.data["state"] = stage.value
+                project.save()
+                self._log(project, f"|| pausa {stage.value}")
+                print(f"|| PAUSA en {stage.value} — paso manual pendiente:", flush=True)
+                print(f"   {exc}", flush=True)
+                return
             except Exception as exc:  # registrar y conservar TODO el trabajo
                 project.mark_failed(stage, str(exc))
                 self._log(project, f"x {stage.value}: {exc}")

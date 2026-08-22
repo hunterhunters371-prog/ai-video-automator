@@ -4,7 +4,8 @@ Entrada: script.json + plantilla.
 Salida:  storyboard.json — por segmento: t ("MM:SS-MM:SS"), role, narration,
          on_screen_text, asset (type + prompt/src), animation, transition_in,
          sfx. Este JSON es la única fuente de verdad de la edición
-         (formato: projects/_ejemplo/storyboard.json).
+         (formato: projects/_ejemplo/storyboard.json). Lleva `template` para
+         que EDITING/ASSETS carguen la plantilla correcta.
 """
 from __future__ import annotations
 
@@ -71,6 +72,7 @@ Devuelve JSON: {{"segments": [{{"t": "00:00-00:03", "role": "hook",
         if not segments:
             raise StageError("storyboard sin segmentos")
         _validate_times(segments, duration)
+        data["template"] = template_name  # EDITING/ASSETS cargan ESTA plantilla
         out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return {"storyboard": "storyboard.json"}
 

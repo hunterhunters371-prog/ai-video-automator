@@ -10,20 +10,27 @@ provider: hf
 width: 1080
 height: 1920
 
+# Sufijo de estilo que se añade a TODOS los prompts de imagen IA: acabado
+# coherente entre escenas y menos texto corrupto en las imágenes.
+prompt_suffix: "estilo 3D animado tipo Pixar, iluminación cinematográfica, colores vibrantes, muy detallado, alta calidad, sin texto, sin letras, sin marcas de agua"
+
 hf:
   # Cada modelo lo sirve un proveedor distinto y el catálogo cambia. El SDK
   # huggingface_hub enruta solo al proveedor vivo; la lista se prueba en orden
   # y la primera imagen válida gana. Mapeo en la doc oficial (ago 2026,
   # huggingface.co/docs/inference-providers/tasks/text-to-image):
+  #   fal-ai / replicate / wavespeed→ black-forest-labs/FLUX.1-dev
   #   nscale                        → black-forest-labs/FLUX.1-schnell
   #   hf-inference                  → stabilityai/stable-diffusion-3-medium-diffusers
-  #   fal-ai / replicate / wavespeed→ black-forest-labs/FLUX.1-dev
-  # Si un modelo devuelve 404/410, ese proveedor dejó de servirlo: sustitúyelo
-  # por uno de `hf models ls --warm --pipeline-tag text-to-image`.
+  # dev va primero por CALIDAD; si falla (cuota/proveedor), la cascada sigue
+  # con schnell (destilado, rápido y barato) y luego SD3-medium.
+  # Si un modelo devuelve 404/410, ese proveedor dejó de servirlo: elige otro
+  # modelo mirando la doc viva (misma URL de arriba) y re-prueba con
+  # `python scripts/probar-imagen.py`.
   models:
+    - black-forest-labs/FLUX.1-dev
     - black-forest-labs/FLUX.1-schnell
     - stabilityai/stable-diffusion-3-medium-diffusers
-    - black-forest-labs/FLUX.1-dev
   # Respaldo HTTP si huggingface_hub no está instalado o falla el enrutado.
   # api-inference.huggingface.co está MUERTO: no volver a usarlo.
   router_bases:

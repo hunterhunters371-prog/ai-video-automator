@@ -19,6 +19,7 @@ from ..state import Project, Stage
 from .base import BaseStage, StageError
 
 NARRATOR = "narrador"
+MIN_LINEAS_HISTORIA = 6
 
 # Reparto edge-tts por defecto cuando configs/voice.yml no define
 # `character_voices`. El narrador usa la voz principal de voice.yml.
@@ -107,23 +108,30 @@ def _historia(research: str, template: dict, template_name: str, duration: int) 
 
 Escribe una MINI HISTORIA vertical de ~{duration} s en español, estilo
 frutinovela: personajes antropomórficos (frutas, verduras u objetos con cara y
-sentimientos exagerados) en un micro drama con planteamiento, conflicto y
-remate. Guía de ritmo (orientativa):
+sentimientos exagerados) en un micro drama. Guía de ritmo (orientativa):
 {structure}
 
-Reglas:
+Reglas de historia (lo más importante):
+- Entre 8 y 14 líneas en total: suficiente carne para que el drama respire.
+- Conflicto con GIRO inesperado: algo cambia a mitad y la historia no es plana.
+- RÉPLICA y CONTRARRÉPLICA: los personajes se responden entre sí con tensión
+  creciente; nada de monólogos largos ni de resumir la trama en narración.
+- El narrador solo ABRE y CIERRA; el drama lo actúan los personajes.
+- Remate con gancho que invite al siguiente episodio (esto es una serie).
+
+Reglas de formato:
 - Máximo {max_chars} personajes. El NARRADOR conduce la trama entre escenas.
-- Cada personaje lleva un "descriptor" visual FIJO y concreto (especie, color,
-  cara, elemento distintivo): se repetirá palabra por palabra al generar sus
-  imágenes, así que redáctalo bien una sola vez.
+- Cada personaje lleva "personalidad" (una frase) y un "descriptor" visual
+  FIJO y concreto (especie, color, cara, elemento distintivo): se repetirá
+  palabra por palabra al generar sus imágenes, así que redáctalo bien una vez.
 - "lineas" mezcla narración y diálogo. Cada línea: "quien" ("narrador" o el
   nombre EXACTO del personaje), "texto" (corto, hablable, números en letra),
   "emocion" (una palabra), "escena" (entero desde 1).
-- Réplicas rápidas, drama exagerado, remate claro. Sin CTA.
 
 Devuelve JSON exacto:
 {{"titulo": "...",
- "personajes": [{{"nombre": "...", "especie": "...", "descriptor": "..."}}],
+ "personajes": [{{"nombre": "...", "especie": "...", "personalidad": "...",
+ "descriptor": "..."}}],
  "lineas": [{{"quien": "narrador", "texto": "...", "emocion": "...", "escena": 1}}]}}""",
         system="Eres guionista de frutinovelas virales. Respondes solo JSON.",
     )
@@ -134,6 +142,11 @@ Devuelve JSON exacto:
         raise StageError("script historia incompleto: faltan personajes o lineas")
     if len(personajes) > max_chars:
         raise StageError(f"script con {len(personajes)} personajes (máx {max_chars})")
+    if len(lineas) < MIN_LINEAS_HISTORIA:
+        raise StageError(
+            f"historia muy corta: {len(lineas)} líneas "
+            f"(mínimo {MIN_LINEAS_HISTORIA}); el retry le da otra oportunidad al LLM"
+        )
 
     nombres = []
     for i, p in enumerate(personajes):
@@ -143,6 +156,7 @@ Devuelve JSON exacto:
         if not p.get("descriptor"):
             raise StageError(f"personaje {nombre} sin descriptor fijo")
         p["nombre"] = nombre
+        p["personalidad"] = p.get("personalidad") or ""
         p["voz"] = p.get("voz") or pool[i % len(pool)]
         nombres.append(nombre)
 
