@@ -42,24 +42,46 @@ sudo dnf install ffmpeg        # Fedora (RPM Fusion)
 
 ## 2. Clave de LLM (obligatoria — elige UNA)
 
-### Opción A: OpenAI
+### Gratis, sin tarjeta
+
+**Opción A: GitHub Models** (recomendada si ya tienes cuenta de GitHub)
+
+1. Entra en <https://github.com/settings/tokens> → **Generate new token** (classic basta).
+2. En `.env`: `GITHUB_MODELS_TOKEN=<tu token>` y `LLM_PROVIDER=github`.
+3. Límite gratuito: decenas de llamadas al día — cada video usa ~3 (research, script, storyboard), alcanza para varios videos diarios.
+
+**Opción B: Hugging Face** (un solo token sirve para LLM **e imágenes IA**)
+
+1. Token gratis en <https://huggingface.co/settings/tokens> (permiso *read* basta).
+2. En `.env`: `HF_TOKEN=<tu token>` y `LLM_PROVIDER=hf`.
+3. El mismo token además activa las imágenes IA en ASSETS (ver `configs/images.yml`).
+
+**Opción C: Pollinations**
+
+1. Llave gratis en <https://enter.pollinations.ai>.
+2. En `.env`: `POLLINATIONS_KEY=<tu llave>` y `LLM_PROVIDER=pollinations`.
+3. La ruta de texto quedó marcada `[no verificado]` en `src/llm.py`: si falla, confirmar en <https://gen.pollinations.ai/docs>.
+
+### De pago (mayor calidad)
+
+**Opción D: OpenAI**
 
 1. Entra en <https://platform.openai.com/api-keys> e inicia sesión (o crea cuenta).
 2. Pulsa **Create new secret key**, dale un nombre (ej. `ai-video-automator`).
 3. **Cópiala en ese momento**: OpenAI solo la muestra una vez. Si la pierdes, crea otra.
 4. Asegúrate de tener crédito/facturación activa en <https://platform.openai.com/settings/organization/billing> (la API es pago por uso).
+5. En `.env`: `OPENAI_API_KEY=<tu clave>` y `LLM_PROVIDER=openai`.
 
 Referencia oficial: <https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key>
 
-### Opción B: Anthropic (Claude)
+**Opción E: Anthropic (Claude)**
 
 1. Entra en <https://platform.claude.com/> e inicia sesión (o crea cuenta).
 2. Ve a **Settings → API keys**: <https://platform.claude.com/settings/keys>
 3. Pulsa **Create key**, ponle nombre y cópiala al instante (empieza por `sk-ant-...`).
+4. En `.env`: `ANTHROPIC_API_KEY=<tu clave>` y `LLM_PROVIDER=anthropic`.
 
 Referencia oficial: <https://platform.claude.com/docs/en/get-api-key>
-
-> **Recomendación para el MVP:** OpenAI cubre más piezas del pipeline con un solo proveedor (LLM ahora; Whisper y TTS en fases posteriores). Ambas son pago por uso.
 
 ---
 

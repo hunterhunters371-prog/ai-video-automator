@@ -29,6 +29,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+GITHUB_MODELS_TOKEN = os.getenv("GITHUB_MODELS_TOKEN", "")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 POLLINATIONS_KEY = os.getenv("POLLINATIONS_KEY", "")
 
