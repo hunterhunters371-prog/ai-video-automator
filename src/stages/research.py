@@ -7,7 +7,21 @@ from __future__ import annotations
 
 from .. import config, llm, websearch
 from ..state import Project, Stage
-from .base import BaseStage
+from .base import BaseStage, StageError
+
+
+def _load_templates() -> dict:
+    """Carga todas las plantillas. Una rota se reporta y se salta:
+    el pipeline no puede morir por una plantilla que ni siquiera se eligió."""
+    templates = {}
+    for name in config.list_templates():
+        try:
+            templates[name] = config.load_template(name)
+        except Exception as exc:
+            print(f"[research] plantilla {name!r} ignorada (YAML inválido): {exc}")
+    if not templates:
+        raise StageError("ninguna plantilla válida en templates/")
+    return templates
 
 
 class ResearchStage(BaseStage):
@@ -21,7 +35,7 @@ class ResearchStage(BaseStage):
         idea = project.data["idea"]["text"]
         results = websearch.search(idea, max_results=5)
 
-        templates = {name: config.load_template(name) for name in config.list_templates()}
+        templates = _load_templates()
         options = "\n".join(
             f"- {name}: {tpl.get('description', '')} "
             f"(duración objetivo {tpl.get('duration_target_s', 30)} s)"

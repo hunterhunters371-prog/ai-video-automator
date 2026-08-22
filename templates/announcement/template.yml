@@ -1,6 +1,6 @@
 # Plantilla: announcement — anuncios y lanzamientos
 name: announcement
-description: Anuncios oficiales: lanzamientos, fechas, novedades confirmadas.
+description: "Anuncios oficiales: lanzamientos, fechas, novedades confirmadas."
 duration_target_s: 20
 aspect: "9:16"
 resolution: [1080, 1920]
