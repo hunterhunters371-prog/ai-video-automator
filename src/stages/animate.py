@@ -1,28 +1,37 @@
 """ANIMATE (M2): clips animados de personaje para las líneas de diálogo.
 
 Modo carrusel: no-op. Modo historia: verifica que cada línea de diálogo tenga
-su clip en `projects/<id>/clips/lNNN_<quien>.mp4` (mismo nombre que el audio
-de `voice/`, extensión .mp4). Si falta alguno: escribe
-`manifiesto_animacion.json` + `prompts_flow.md` (prompt detallado por clip) y
-PAUSA el proyecto con instrucciones (PipelinePaused). Si están todos,
+su clip en `projects/<id>/clips/` (mismo nombre base que su audio de `voice/`,
+con extensión de video). Si falta alguno: escribe `manifiesto_animacion.json`
++ las guías de prompts y PAUSA el proyecto (PipelinePaused). Si están todos,
 completa la etapa y EDITING los monta.
 
-v1 los clips se generan a mano en Google Flow (Veo 3.1 Lite + Ingredients:
-50 créditos gratis/día, 10 por clip ≈ 5 clips/día). v2: Colab + SadTalker
-contra NUESTRO audio TTS (lip-sync exacto). La pista de voz nunca sale del
-clip: el audio maestro es edge-tts y RENDERING ignora el audio de los videos
-(concat a=0), así que cambiar de proveedor de clips no toca el montaje.
+Proveedor preferido en configs/pipeline.yml → animate.provider:
+  meta  — Meta AI / Vibes (meta.ai): prompt "Imagina..." → imagen → Animate
+          (+ lip sync). Gratis durante el rollout, con tope diario y posible
+          marca de agua. Guía generada: prompts_meta.md
+  flow  — Google Flow: Veo 3.1 Lite, 50 créditos/día, 10 por clip, sin marca
+          de agua. Guía generada: prompts_flow.md
+  colab — [pendiente] SadTalker sobre nuestro TTS (lip-sync exacto, gratis).
+
+Ambas guías se escriben siempre: si un proveedor se queda sin cuota, se sigue
+con el otro sin volver a correr nada. El audio maestro SIEMPRE es nuestro
+edge-tts (RENDERING ignora el audio de los clips), así que cambiar de
+proveedor no toca el montaje.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+from .. import config
 from ..state import Project, Stage
 from .base import BaseStage, PipelinePaused
 from .script import NARRATOR
 
 MIN_CLIP_BYTES = 100_000  # un mp4 válido de 4-8 s pesa mucho más que esto
+CLIP_EXTS = (".mp4", ".mov", ".webm", ".mkv")
+GUIAS = {"meta": "prompts_meta.md", "flow": "prompts_flow.md"}
 
 
 class AnimateStage(BaseStage):
@@ -48,22 +57,24 @@ class AnimateStage(BaseStage):
         manifiesto, faltantes = [], []
         for ln in dialogo:
             stem = Path(ln["archivo"]).stem
-            clip = clips_dir / f"{stem}.mp4"
+            clip = _find_clip(clips_dir, stem)
             p = personajes.get(ln["quien"], {})
             item = {
-                "clip": f"clips/{stem}.mp4",
+                "clip": (str(clip.relative_to(project.path)) if clip
+                         else f"clips/{stem}.mp4"),
                 "audio": f"voice/{ln['archivo']}",
                 "quien": ln["quien"],
                 "descriptor": p.get("descriptor", ""),
+                "personalidad": p.get("personalidad", ""),
                 "texto": ln["texto"],
                 "emocion": ln.get("emocion") or "neutra",
                 "escena": ln["escena"],
                 "contexto_visual": contextos.get(ln["escena"], ""),
                 "dur_s": ln["dur_s"],
-                "listo": clip.exists() and clip.stat().st_size >= MIN_CLIP_BYTES,
+                "listo": clip is not None,
             }
             manifiesto.append(item)
-            if not item["listo"]:
+            if clip is None:
                 faltantes.append(item)
 
         (project.path / "manifiesto_animacion.json").write_text(
@@ -71,24 +82,42 @@ class AnimateStage(BaseStage):
         )
 
         if faltantes:
+            # Las dos guías, siempre: si un proveedor agota su cuota diaria se
+            # sigue con el otro sin re-ejecutar nada.
+            (project.path / "prompts_meta.md").write_text(
+                _prompts_meta(project, script, faltantes), encoding="utf-8"
+            )
             (project.path / "prompts_flow.md").write_text(
                 _prompts_flow(project, script, faltantes), encoding="utf-8"
             )
+            prov = str((config.PIPELINE.get("animate") or {}).get("provider", "meta"))
+            guia = GUIAS.get(prov, GUIAS["meta"])
+            otra = GUIAS["flow"] if guia == GUIAS["meta"] else GUIAS["meta"]
             nombres = ", ".join(f["clip"] for f in faltantes)
             raise PipelinePaused(
                 f"faltan {len(faltantes)} clips de diálogo ({nombres}). "
-                f"Guía con los prompts listos para copiar: "
-                f"projects/{project.project_id}/prompts_flow.md — genera cada "
-                f"clip en Flow (Video → Ingredients → Veo 3.1 Lite → 9:16), "
-                f"descárgalo, súbelo a projects/{project.project_id}/clips/ "
-                f"con el nombre EXACTO (menú ⋮ → Upload) y luego: "
+                f"Guía paso a paso con los prompts listos para copiar: "
+                f"projects/{project.project_id}/{guia} "
+                f"(alternativa si se agota la cuota: {otra}). "
+                f"Genera cada clip, descárgalo, súbelo a "
+                f"projects/{project.project_id}/clips/ con el nombre EXACTO "
+                f"(menú ⋮ → Upload) y luego: "
                 f"python -m src.main resume {project.project_id}"
             )
         return {"clips": "manifiesto_animacion.json"}
 
 
+def _find_clip(clips_dir: Path, stem: str) -> Path | None:
+    """Acepta cualquier extensión de video: Meta AI y Flow no siempre dan .mp4."""
+    for ext in CLIP_EXTS:
+        cand = clips_dir / f"{stem}{ext}"
+        if cand.exists() and cand.stat().st_size >= MIN_CLIP_BYTES:
+            return cand
+    return None
+
+
 def _contextos_escena(project: Project, lines: list[dict]) -> dict[int, str]:
-    """Prompt visual del storyboard por número de escena (para el prompt Flow).
+    """Prompt visual del storyboard por número de escena (para el prompt).
 
     Los beats de modo historia son uno por escena y en orden; si el storyboard
     partió alguno, nos quedamos con el segmento más cercano.
@@ -107,22 +136,120 @@ def _contextos_escena(project: Project, lines: list[dict]) -> dict[int, str]:
     return out
 
 
-def _prompts_flow(project: Project, script: dict, faltantes: list[dict]) -> str:
-    """Guía markdown: ingrediente por personaje + prompt detallado por clip."""
+def _clip_len(default: int = 8) -> int:
+    return int((config.PIPELINE.get("animate") or {}).get("clip_len_s", default))
+
+
+def _prompts_meta(project: Project, script: dict, faltantes: list[dict]) -> str:
+    """Guía para Meta AI / Vibes (meta.ai): imagen → Animate → lip sync.
+
+    Flujo y reglas según el Centro de ayuda oficial de Meta (ago-2026):
+    - El prompt de imagen debe empezar por "Imagina" o "Crea una imagen" y ser
+      detallado (escena + qué hay + estilo).
+    - Se toca la imagen → Animate (+ prompt de animación opcional) → vibe.
+    - Se puede animar una imagen SUBIDA y añadir lip sync para que hable.
+    """
     pid = project.project_id
+    seg = _clip_len()
     partes = [
-        f"# Clips pendientes — {pid}",
+        f"# Clips pendientes — {pid} · ruta META AI (meta.ai)",
+        "",
+        "## Cómo funciona (Centro de ayuda de Meta, ago-2026)",
+        "",
+        '1. Escribe un prompt que EMPIECE por "Imagina" → Meta AI genera varias',
+        "   imágenes.",
+        "2. Toca la imagen elegida → **Animate** (con prompt de animación) → vibe.",
+        "3. Puedes añadir **lip sync** para que la imagen hable, y también animar",
+        "   una imagen SUBIDA por ti.",
+        "",
+        "## Reglas de oro (para que no salga horrible)",
+        "",
+        "- **Una sola imagen por personaje**, reutilizada como origen de TODOS",
+        "  sus clips (imagen→video, nunca texto→video): es lo único que evita que",
+        "  el personaje cambie de cara entre escenas.",
+        "- **Movimiento pequeño y lento** en el prompt de Animate: preserva el",
+        "  parecido. Pedir acción grande deforma la cara.",
+        "- Prompt detallado y con estilo explícito; Meta responde mal a lo vago.",
+        "- Cuenta con ~5 generaciones por clip usable: descarta sin pena.",
+        "- **Límites**: gratis durante el rollout, pero con tope diario y colas.",
+        "  Si se corta, espera ~24 h o sigue con `prompts_flow.md` (Google Flow,",
+        "  50 créditos/día). Meta ya anunció pruebas de suscripción de pago:",
+        "  la barra libre puede cerrarse sin aviso.",
+        "- **Marca de agua**: Vibes puede marcar el video. No recortes al montar",
+        "  (perderías al personaje); si te molesta, usa la ruta Flow.",
+        "- Lo que publiques en el feed de Vibes es público: NO lo publiques ahí",
+        "  si el episodio es para tu canal. Solo genera y descarga.",
+        "",
+        "## Paso 1 — La imagen de cada personaje (una sola vez, se reutiliza)",
+        "",
+    ]
+    for p in script.get("personajes", []):
+        partes += [
+            f"### {p['nombre']}",
+            "```",
+            f"Imagina un primer plano vertical de {p.get('descriptor', '')}. "
+            f"El personaje mira a la cámara con la cara completa visible y una "
+            f"expresión {p.get('personalidad') or 'expresiva'}. Fondo simple y "
+            f"desenfocado. Usa un estilo de animación 3D tipo Pixar, con "
+            f"iluminación cinematográfica suave y colores vibrantes. Sin texto "
+            f"ni letras en la imagen.",
+            "```",
+            "Guárdala (descárgala) antes de animar: la vas a reutilizar en cada",
+            "clip de este personaje y en los próximos episodios.",
+            "",
+        ]
+    partes += [
+        f"## Paso 2 — Un clip por línea (Animate, ~{seg} s, vertical)",
+        "",
+        "Para cada clip: abre la imagen del personaje (o súbela) → **Animate** →",
+        "pega el prompt → genera → descarga.",
+        "",
+        "Sobre el **lip sync**: si tu versión permite subir un audio, usa el",
+        "archivo de voz que ya generamos (indicado en cada clip) y la boca",
+        "coincidirá exacto. Si solo permite escribir texto, pega el texto de la",
+        "línea. [no verificado: depende de tu región y versión de la app]",
+        "",
+    ]
+    for f in faltantes:
+        contexto = (f" Alrededor: {f['contexto_visual']}."
+                    if f.get("contexto_visual") else "")
+        partes += [
+            f"### `{f['clip']}`",
+            f"Personaje: **{f['quien']}** · línea de {f['dur_s']} s · "
+            f"emoción: {f['emocion']}",
+            f"Audio para el lip sync: `{f['audio']}`",
+            f"Texto de la línea: «{f['texto']}»",
+            "",
+            "```",
+            f"El personaje habla a la cámara con emoción de {f['emocion']}: "
+            f"mueve la boca como si dijera \"{f['texto']}\", parpadea y hace un "
+            f"gesto exagerado de telenovela. Movimiento suave y lento, ligero "
+            f"balanceo de cabeza y hombros, cámara fija.{contexto} Mantén el "
+            f"mismo diseño y los mismos colores del personaje. Sin texto en "
+            f"pantalla, sin subtítulos.",
+            "```",
+            "",
+        ]
+    partes += _paso_final(pid)
+    return "\n".join(partes)
+
+
+def _prompts_flow(project: Project, script: dict, faltantes: list[dict]) -> str:
+    """Guía para Google Flow: ingrediente por personaje + prompt por clip."""
+    pid = project.project_id
+    seg = _clip_len()
+    partes = [
+        f"# Clips pendientes — {pid} · ruta GOOGLE FLOW",
         "",
         "Flow gratis = 50 créditos/día; cada clip Veo 3.1 Lite cuesta 10 → ~5",
-        "clips al día. La voz la pone el pipeline (TTS propio): pide ACTUACIÓN y",
-        "EMOCIÓN, no diálogo hablado. Si el clip sale con audio, el montaje lo",
-        "ignora (el master de audio es nuestro).",
+        "clips al día, sin marca de agua. La voz la pone el pipeline (TTS",
+        "propio): pide ACTUACIÓN y EMOCIÓN, no diálogo hablado. Si el clip sale",
+        "con audio, el montaje lo ignora.",
         "",
         "## Paso 1 — Ingrediente de cada personaje (una sola vez)",
         "",
-        "En Flow: modo Image (Nano Banana) → pega el descriptor → genera y",
-        "guarda la imagen como ingrediente. Así el personaje se ve IGUAL en",
-        "todos los clips (consistencia).",
+        "Modo Image (Nano Banana) → pega el descriptor → guárdala como",
+        "ingrediente. Así el personaje se ve IGUAL en todos los clips.",
         "",
     ]
     for p in script.get("personajes", []):
@@ -131,32 +258,48 @@ def _prompts_flow(project: Project, script: dict, faltantes: list[dict]) -> str:
             "```",
             f"3D animated character portrait, Pixar style, neutral background, "
             f"facing camera, full face visible: {p.get('descriptor', '')}. "
-            f"Vertical 9:16, cinematic lighting, vibrant colors, no text, no watermark.",
+            f"Vertical 9:16, cinematic lighting, vibrant colors, no text, "
+            f"no watermark.",
             "```",
             "",
         ]
     partes += [
-        "## Paso 2 — Clips (Video → Ingredients → Veo 3.1 Lite → 9:16 → 8 s)",
+        f"## Paso 2 — Clips (Video → Ingredients → Veo 3.1 Lite → 9:16 → {seg} s)",
         "",
-        "Selecciona el ingrediente del personaje, pega el prompt del clip,",
-        "descarga el mp4 y RENÓMBRALO EXACTO como se indica. Sube cada archivo",
-        f"a `projects/{pid}/clips/` (menú ⋮ → Upload en Cloud Shell) y corre:",
-        f"`python -m src.main resume {pid}`",
+        "Selecciona el ingrediente del personaje, pega el prompt y descarga.",
         "",
     ]
     for f in faltantes:
-        contexto = f" Scene: {f['contexto_visual']}." if f.get("contexto_visual") else ""
+        contexto = (f" Scene: {f['contexto_visual']}."
+                    if f.get("contexto_visual") else "")
         partes += [
             f"### `{f['clip']}`",
-            f"Personaje: **{f['quien']}** · línea de {f['dur_s']} s · emoción: {f['emocion']}",
-            f"La línea que está diciendo (para tu referencia): «{f['texto']}»",
+            f"Personaje: **{f['quien']}** · línea de {f['dur_s']} s · "
+            f"emoción: {f['emocion']}",
+            f"Texto de la línea (referencia): «{f['texto']}»",
             "```",
             f"Vertical 9:16 3D animated shot, Pixar style. {f['descriptor']}. "
             f"The character acts an exaggerated telenovela reaction "
             f"({f['emocion']}): expressive eyes and mouth, subtle head and body "
             f"movement, as if saying \"{f['texto']}\".{contexto} Cinematic "
-            f"lighting, vibrant colors, no on-screen text, no captions, no watermark.",
+            f"lighting, vibrant colors, no on-screen text, no captions, "
+            f"no watermark.",
             "```",
             "",
         ]
+    partes += _paso_final(pid)
     return "\n".join(partes)
+
+
+def _paso_final(pid: str) -> list[str]:
+    return [
+        "## Paso 3 — Subir y reanudar",
+        "",
+        "1. Renombra cada archivo EXACTO como el título de su bloque",
+        "   (`l002_limon.mp4`, ...). Vale .mp4, .mov o .webm.",
+        f"2. Menú ⋮ → **Upload** → súbelos a `projects/{pid}/clips/`.",
+        f"3. `python -m src.main resume {pid}`",
+        "",
+        "No hace falta tenerlos todos de una vez: sube los que lleves, reanuda,",
+        "y el pipeline volverá a pausar pidiendo solo los que falten.",
+    ]

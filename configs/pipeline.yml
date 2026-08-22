@@ -12,9 +12,24 @@ stages:
   storyboard: { timeout_s: 180, retries: 2 }
   assets:     { timeout_s: 600, retries: 2 }
   voice:      { timeout_s: 300, retries: 3 }
+  animate:    { timeout_s: 600, retries: 1 }
   editing:    { timeout_s: 600, retries: 2 }
   rendering:  { timeout_s: 900, retries: 2 }
   qc:         { timeout_s: 300, retries: 1 }
+
+# Clips de personaje que hablan (M2, solo plantillas con mode: historia).
+# provider decide QUÉ guía de prompts se nombra al pausar; ANIMATE escribe
+# siempre las dos (prompts_meta.md y prompts_flow.md) para poder saltar de
+# proveedor cuando uno agota su cuota diaria.
+#   meta  — Meta AI / Vibes (meta.ai): imagen → Animate → lip sync. Gratis
+#           durante el rollout, tope diario, posible marca de agua.
+#   flow  — Google Flow: Veo 3.1 Lite, 50 créditos/día (10 por clip), limpio.
+#   colab — [pendiente] SadTalker sobre nuestro TTS: lip-sync exacto, gratis.
+# El audio maestro SIEMPRE es nuestro edge-tts, así que cambiar de proveedor
+# no toca el montaje.
+animate:
+  provider: meta
+  clip_len_s: 8                # duración que se le pide al generador
 
 retry:
   backoff_base_s: 5            # backoff exponencial: 5s, 10s, 20s...

@@ -1,13 +1,14 @@
 """EDITING: subtítulos por palabra (whisper) + edit_plan.json sincronizado.
 
 Entrada: storyboard.json + voice.mp3 + assets_map.json (+ voice/lines.json y
-         clips/ en modo historia M2).
+         manifiesto_animacion.json en modo historia M2).
 Salida:  subtitles.ass/.srt (grupos de 2-4 palabras, keywords resaltadas,
          posición en safe zones) y edit_plan.json re-sincronizado con la
          duración real del audio.
 Modo historia: un segmento por LÍNEA con los tiempos reales del audio
-         multi-voz; los diálogos usan el clip animado del personaje y las
-         líneas del narrador la imagen de su escena.
+         multi-voz; los diálogos usan el clip animado del personaje (según el
+         manifiesto de ANIMATE) y las líneas del narrador la imagen de su
+         escena.
 Prioridad: ritmo y retención — corte visual cada 2-4 s.
 """
 from __future__ import annotations
@@ -107,26 +108,35 @@ class EditingStage(BaseStage):
 def _plan_historia(project: Project, board: dict, amap: dict,
                    duration: float) -> list[dict]:
     """Un segmento por línea de diálogo/narración con los tiempos REALES del
-    audio multi-voz (voice/lines.json). ANIMATE garantiza que toda línea de
-    personaje tiene su clip en clips/; si falta, cae a la imagen de la escena."""
+    audio multi-voz (voice/lines.json). El clip de cada diálogo sale del
+    manifiesto de ANIMATE (acepta .mp4/.mov/.webm); si falta, cae a la imagen
+    de su escena."""
     lines = json.loads(
         (project.path / "voice" / "lines.json").read_text(encoding="utf-8")
     )
+    clip_por_audio: dict[str, str] = {}
+    manifiesto = project.path / "manifiesto_animacion.json"
+    if manifiesto.exists():
+        for item in json.loads(manifiesto.read_text(encoding="utf-8")):
+            if item.get("listo") and item.get("clip"):
+                clip_por_audio[Path(item["audio"]).name] = item["clip"]
+
     segs = board["segments"]
     escenas = sorted({ln["escena"] for ln in lines})
     plan = []
     for i, ln in enumerate(lines):
         pos = min(escenas.index(ln["escena"]), len(segs) - 1)
         seg = segs[pos]
-        stem = Path(ln["archivo"]).stem
-        clip = project.path / "clips" / f"{stem}.mp4"
-        if ln["quien"] != NARRATOR and clip.exists() and clip.stat().st_size > 0:
-            source, kind, animation = str(clip.relative_to(project.path)), "video", "static"
+        clip_rel = clip_por_audio.get(ln["archivo"])
+        if (ln["quien"] != NARRATOR and clip_rel
+                and (project.path / clip_rel).exists()):
+            source, kind, animation = clip_rel, "video", "static"
         else:
             entry = amap.get(f"seg{pos:02d}")
             if not entry:
                 raise StageError(
-                    f"assets_map sin recurso para la escena {ln['escena']} ({f'seg{pos:02d}'})"
+                    f"assets_map sin recurso para la escena {ln['escena']} "
+                    f"(seg{pos:02d})"
                 )
             source, kind = entry["path"], entry["kind"]
             animation = seg.get("animation", "static")
