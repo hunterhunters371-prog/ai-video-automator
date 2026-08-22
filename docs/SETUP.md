@@ -53,9 +53,14 @@ sudo dnf install ffmpeg        # Fedora (RPM Fusion)
 
 **Opción A: Hugging Face** (recomendada — un solo token sirve para LLM **e imágenes IA**)
 
-1. Token gratis en <https://huggingface.co/settings/tokens> (permiso *read* basta).
-2. En `.env`: `HF_TOKEN=<tu token>` y `LLM_PROVIDER=hf`.
-3. El mismo token activa las imágenes IA en ASSETS (ver `configs/images.yml`).
+1. Crea el token con este enlace directo (abre el formulario con el permiso
+   de inferencia YA marcado):
+   <https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained>
+   El permiso necesario es **«Make calls to Inference Providers»**
+   (referencia oficial: <https://huggingface.co/docs/inference-providers>).
+2. **Un token de solo *read* NO sirve para el LLM**: responde 401/403.
+3. En `.env`: `HF_TOKEN=<tu token>` y `LLM_PROVIDER=hf` (o corre `sh setup-env.sh`).
+4. El mismo token activa las imágenes IA en ASSETS (ver `configs/images.yml`).
 
 **Opción B: Pollinations**
 
