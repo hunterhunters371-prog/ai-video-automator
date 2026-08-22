@@ -22,12 +22,16 @@ El LLM devuelve JSON con:
 
 - `personajes[]`: nombre, especie ("limón", "taza"), `descriptor` visual FIJO
   (se repite palabra por palabra en cada prompt → coherencia), `voz` edge-tts
-  asignada (p.ej. es-CO-SalomeNeural / es-MX-JorgeNeural).
+  asignada (pool por defecto en `script.py`; sobreescribible con
+  `character_voices` en configs/voice.yml). El narrador usa la voz principal.
 - `lineas[]`: `quien` (`narrador` | nombre de personaje), `texto`, `emocion`,
   `escena` (índice). Mezcla narración y diálogo.
 
-La plantilla nueva vive en `templates/frutinovela/template.yml`; las 8
-existentes siguen sirviendo para el modo carrusel — `--template` decide el modo.
+Se activa con `mode: historia` en la plantilla. La plantilla nueva vive en
+`templates/frutinovela/template.yml`; las 8 existentes siguen sirviendo para
+el modo carrusel — `--template` decide el modo. Por compatibilidad mientras
+llega ANIMATE, el script de historia también rellena `narration` y `beats`
+(una entrada por escena), así STORYBOARD/EDITING actuales no se rompen.
 
 ### PERSONAJE — etapa nueva
 
@@ -46,8 +50,11 @@ personaje sobre el fondo.
 ### VOICE — multi-voz
 
 Una pista por línea con la voz de su `quien` (edge-tts). Artefactos:
-`voice/l001_narrador.mp3`, `voice/l002_limon.mp3`, ... + duraciones. El
-ensamblado de la pista completa ocurre en EDITING (la mezcla ffmpeg ya existe).
+`voice/l001_narrador.mp3`, `voice/l002_limon.mp3`, ... + `voice/lines.json`
+(offset y duración por línea — base del manifiesto de ANIMATE). Además se
+ensambla `assets/voice.mp3` con ffmpeg (concat + re-encode) para que EDITING
+y RENDERING actuales sigan funcionando sin cambios. Cada archivo de línea es
+idempotente: un retry solo regenera lo que falta.
 
 ### ANIMATE — etapa nueva, corre en COLAB (no en Cloud Shell)
 
@@ -88,7 +95,12 @@ línea de diálogo tiene su clip` (y sigue siendo técnico, no estético).
 
 ## Orden de construcción
 
-1. SCRIPT modo historia + plantilla frutinovela + VOICE multi-voz.
+1. **SCRIPT modo historia + plantilla frutinovela + VOICE multi-voz —
+   CONSTRUIDO (22-ago) [no verificado en corrida real].** Probar con:
+   `python -m src.main new "<idea>" --template frutinovela`
+   y verificar `projects/<id>/voice/lines.json` (una entrada por línea con su
+   voz). El video resultante aún es visualmente carrusel: es lo esperado hasta
+   los pasos 2-4.
 2. PERSONAJE (hoja consistente).
 3. Export `para_colab.zip` + pausa con instrucciones en ANIMATE.
 4. `notebooks/animar.ipynb` (SadTalker en Colab).

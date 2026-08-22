@@ -1,0 +1,33 @@
+# Plantilla: frutinovela — mini historias con personajes que hablan (M2)
+# Uso: python -m src.main new "<idea>" --template frutinovela
+name: frutinovela
+description: "Frutinovelas: micro dramas con frutas/objetos antropomórficos; narrador + diálogo de personajes."
+mode: historia               # SCRIPT genera personajes+lineas; VOICE usa multi-voz
+duration_target_s: 30
+aspect: "9:16"
+resolution: [1080, 1920]
+fps: 30
+
+characters_max: 2            # v1: diálogo entre máx 2 personajes (+ narrador)
+
+structure:                   # guía de ritmo para el guion de historia
+  - { role: planteamiento, max_s: 8 }
+  - { role: conflicto,     max_s: 14 }
+  - { role: remate,        max_s: 8 }
+
+style:
+  font: "Montserrat Black"
+  colors: { primary: "#FFFFFF", highlight: "#FF5252", accent: "#FFD400", background: "#1A0E1E" }
+  caption_position: lower_third
+
+preferred_assets: [imagen_ia, stock]
+
+captions:
+  words_per_group: [2, 4]
+  max_chars_per_line: 22
+  highlight_keywords: true
+  per_character_colors: true   # subtítulos con color por personaje (paso 6 de M2)
+
+transitions: { in: fade, between: fade, out: fade }
+music: { mood: dramatic, volume: 0.15, ducking: true }
+sfx: [impact]

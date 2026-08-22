@@ -30,10 +30,10 @@ frutinovelas / mini historias con un personaje que habla** para YouTube Shorts
    - **Formato elegido: narrador + escenas de personajes.** Diseño completo en
      `docs/M2-frutinovelas.md`.
 
-## Estado actual (22 ago 2026, ~22:20 UTC)
+## Estado actual (22 ago 2026, ~22:30 UTC)
 
-**M1 CERRADO y la generación de imágenes IA VERIFICADA en producción. M2
-(frutinovelas) DISEÑADO, falta construirlo.**
+**M1 CERRADO, imágenes IA verificadas, y M2 paso 1 CONSTRUIDO [no verificado]:
+SCRIPT modo historia + VOICE multi-voz + plantilla frutinovela.**
 
 - `video-0001` COMPLETED (89 s): primer Short de punta a punta, pero con las 6
   escenas en `fallback_color` (destapó el bug de imágenes). Primer éxito
@@ -45,6 +45,12 @@ frutinovelas / mini historias con un personaje que habla** para YouTube Shorts
 - Token HF fine-grained CON el permiso «Make calls to Inference Providers»:
   validado en ambas vías (LLM 200 OK + imágenes 200 OK). Un token de solo
   *read* da 401/403.
+- M2 paso 1: `templates/frutinovela/template.yml` (`mode: historia`),
+  script.py genera `personajes` (descriptor fijo + voz) y `lineas`
+  (narrador/diálogo) manteniendo `narration`/`beats` de compatibilidad;
+  voice.py sintetiza una pista por línea con la voz de su personaje
+  (`voice/lNNN_quien.mp3` + `voice/lines.json`) y ensambla `assets/voice.mp3`
+  con ffmpeg. El modo carrusel quedó intacto.
 
 ## Diagnóstico del bug de imágenes (historial, ya resuelto)
 
@@ -80,21 +86,23 @@ frutinovelas / mini historias con un personaje que habla** para YouTube Shorts
 
 ## Cómo continuar (siguiente paso real)
 
-Construir M2 en el orden de `docs/M2-frutinovelas.md`:
+Probar el paso 1 de M2 y seguir el orden de `docs/M2-frutinovelas.md`:
 
-1. SCRIPT modo historia + plantilla `templates/frutinovela/` + VOICE multi-voz.
-2. PERSONAJE (hoja consistente).
-3. Export `para_colab.zip` + pausa con instrucciones.
-4. `notebooks/animar.ipynb` (SadTalker en Colab).
-5. Import de clips + `resume`.
-6. Subtítulos por personaje + check QC de clips.
+1. `cd ~/ai-video-automator && git pull`
+2. `python -m src.main new "<idea de mini drama>" --template frutinovela`
+   → video-0003: guion con personajes y una voz por personaje. Visualmente
+   sigue siendo carrusel: es lo esperado hasta los pasos 2-4.
+3. Verificación:
+   - `cat projects/video-0003/voice/lines.json` → una entrada por línea, con
+     `quien`, `offset_s` y `dur_s`.
+   - `grep -o '"origin": "[^"]*"' projects/video-0003/assets_map.json`
+     → debe decir `ia:hf`, no `fallback_color`.
+4. Si sale bien → construir paso 2: PERSONAJE (hoja de personaje consistente).
 
-Operativa del pipeline actual (sigue vigente para el modo carrusel):
+Operativa del pipeline (modo carrusel sigue igual):
 
 - `python -m src.main new "<idea>"` → video nuevo; `resume` no re-ejecuta
   etapas completadas.
-- Comprobación de orígenes:
-  `grep -o '"origin": "[^"]*"' projects/<id>/assets_map.json`
 - Opcional: `PEXELS_API_KEY` en `.env` (docs/SETUP.md §3) para stock real.
 - Para VER un video: menú ⋮ de Cloud Shell → **Download** → pegar la ruta en
   el cuadro del diálogo, NUNCA en el prompt. O: Open Editor → árbol → clic

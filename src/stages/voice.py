@@ -1,8 +1,14 @@
 """VOICE: narración TTS con texto preprocesado para sonar natural.
 
-Entrada: script.json (narración) + configs/voice.yml.
-Salida:  assets/voice.mp3 + duración real del audio (EDITING re-sincroniza
-         los tiempos del storyboard con ella).
+Dos modos según script.json:
+  - carrusel: una sola voz (configs/voice.yml) → assets/voice.mp3.
+  - historia (M2): una voz por personaje + narrador. Genera un mp3 por línea
+    en voice/ + lines.json (offsets y duraciones: base del manifiesto de
+    ANIMATE) y el voice.mp3 completo ensamblado con ffmpeg para que
+    EDITING/RENDERING actuales sigan funcionando.
+
+Salida: assets/voice.mp3 + duración real del audio (EDITING re-sincroniza
+        los tiempos del storyboard con ella).
 """
 from __future__ import annotations
 
@@ -17,6 +23,7 @@ import edge_tts
 from .. import config
 from ..state import Project, Stage
 from .base import BaseStage, StageError
+from .script import NARRATOR
 
 _U20 = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete",
         "ocho", "nueve", "diez", "once", "doce", "trece", "catorce",
@@ -39,28 +46,98 @@ class VoiceStage(BaseStage):
             return {"voice": "assets/voice.mp3"}  # idempotente
 
         script = json.loads((project.path / "script.json").read_text(encoding="utf-8"))
-        text = preprocess(script["narration"])
         cfg = config.VOICE
         out.parent.mkdir(exist_ok=True)
-        try:
-            asyncio.run(
-                edge_tts.Communicate(
-                    text,
-                    voice=cfg["voice"],
-                    rate=cfg.get("rate", "+0%"),
-                    pitch=cfg.get("pitch", "+0Hz"),
-                    volume=cfg.get("volume", "+0%"),
-                ).save(str(out))
-            )
-        except Exception as exc:
-            raise StageError(f"edge-tts falló: {exc}") from exc
-        if not out.exists() or out.stat().st_size == 0:
-            raise StageError("edge-tts no produjo audio")
 
+        if script.get("mode") == "historia":
+            return self._multi_voz(project, script, cfg, out)
+
+        text = preprocess(script["narration"])
+        _tts(text, cfg["voice"], cfg, out)
         duration = _duration(out)
         project.data["voice_duration_s"] = duration
         project.save()
         return {"voice": "assets/voice.mp3", "voice_duration_s": duration}
+
+    def _multi_voz(self, project: Project, script: dict, cfg: dict, out: Path) -> dict:
+        """Una pista por línea con la voz de su personaje + ensamblado."""
+        voces = {NARRATOR: cfg["voice"]}
+        for p in script["personajes"]:
+            voces[p["nombre"]] = p["voz"]
+
+        vdir = project.path / "voice"
+        vdir.mkdir(exist_ok=True)
+        partes = []
+        t = 0.0
+        for i, ln in enumerate(script["lineas"], 1):
+            quien = ln["quien"]
+            parte = vdir / f"l{i:03d}_{_slug(quien)}.mp3"
+            # cada archivo es idempotente: un retry solo repite lo que falta
+            if not (parte.exists() and parte.stat().st_size > 0):
+                _tts(preprocess(str(ln["texto"])), voces[quien], cfg, parte)
+            dur = _duration(parte)
+            partes.append({
+                "archivo": parte.name,
+                "quien": quien,
+                "texto": ln["texto"],
+                "emocion": ln.get("emocion"),
+                "escena": ln["escena"],
+                "offset_s": round(t, 2),
+                "dur_s": dur,
+            })
+            t += dur
+
+        (vdir / "lines.json").write_text(
+            json.dumps(partes, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        # voice.mp3 único para EDITING/RENDERING actuales; re-encode para
+        # uniformar parámetros entre voces.
+        lista = vdir / "_concat.txt"
+        lista.write_text(
+            "".join(f"file '{p['archivo']}'\n" for p in partes), encoding="utf-8"
+        )
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                 "-i", "_concat.txt", "-c:a", "libmp3lame", "-q:a", "4", str(out)],
+                capture_output=True, text=True, cwd=str(vdir),
+            )
+        except FileNotFoundError as exc:
+            raise StageError(
+                "ffmpeg no encontrado: instala FFmpeg (docs/SETUP.md §1)"
+            ) from exc
+        if r.returncode != 0 or not out.exists() or out.stat().st_size == 0:
+            raise StageError(f"ffmpeg concat de voces falló: {r.stderr.strip()[:200]}")
+
+        duration = _duration(out)
+        project.data["voice_duration_s"] = duration
+        project.save()
+        return {"voice": "assets/voice.mp3", "voice_duration_s": duration,
+                "voice_lines": "voice/lines.json"}
+
+
+def _tts(text: str, voice: str, cfg: dict, out: Path) -> None:
+    """Sintetiza `text` con `voice` vía edge-tts y valida el resultado."""
+    try:
+        asyncio.run(
+            edge_tts.Communicate(
+                text,
+                voice=voice,
+                rate=cfg.get("rate", "+0%"),
+                pitch=cfg.get("pitch", "+0Hz"),
+                volume=cfg.get("volume", "+0%"),
+            ).save(str(out))
+        )
+    except Exception as exc:
+        raise StageError(f"edge-tts falló ({voice}): {exc}") from exc
+    if not out.exists() or out.stat().st_size == 0:
+        raise StageError(f"edge-tts no produjo audio ({voice})")
+
+
+def _slug(text: str) -> str:
+    s = re.sub(r"[^\w-]+", "_", text.strip().lower())
+    return s.strip("_") or "voz"
 
 
 def preprocess(text: str) -> str:
