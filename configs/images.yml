@@ -1,7 +1,8 @@
 # Generación de imágenes con IA para la etapa ASSETS
 # provider:
-#   hf           — Hugging Face Inference API. Token gratis en .env (HF_TOKEN). Sin tarjeta.
-#   pollinations — Pollinations.ai. Llave gratis en .env (POLLINATIONS_KEY). Sin tarjeta.
+#   hf           — Inference Providers de Hugging Face. Token gratis en .env
+#                  (HF_TOKEN, el MISMO del LLM). Sin tarjeta.
+#   pollinations — Pollinations.ai. Llave gratis en .env (POLLINATIONS_KEY).
 #                  OJO: endpoint exacto marcado [no verificado] en assets.py.
 #   off          — desactiva la IA (ASSETS pasa de stock directo al fondo de color)
 provider: hf
@@ -10,7 +11,23 @@ width: 1080
 height: 1920
 
 hf:
-  model: black-forest-labs/FLUX.1-schnell   # rápido y disponible en el free tier
+  # Cada modelo lo sirve un proveedor distinto y el catálogo cambia. El SDK
+  # huggingface_hub enruta solo al proveedor vivo; la lista se prueba en orden
+  # y la primera imagen válida gana. Mapeo en la doc oficial (ago 2026,
+  # huggingface.co/docs/inference-providers/tasks/text-to-image):
+  #   nscale                        → black-forest-labs/FLUX.1-schnell
+  #   hf-inference                  → stabilityai/stable-diffusion-3-medium-diffusers
+  #   fal-ai / replicate / wavespeed→ black-forest-labs/FLUX.1-dev
+  # Si un modelo devuelve 404/410, ese proveedor dejó de servirlo: sustitúyelo
+  # por uno de `hf models ls --warm --pipeline-tag text-to-image`.
+  models:
+    - black-forest-labs/FLUX.1-schnell
+    - stabilityai/stable-diffusion-3-medium-diffusers
+    - black-forest-labs/FLUX.1-dev
+  # Respaldo HTTP si huggingface_hub no está instalado o falla el enrutado.
+  # api-inference.huggingface.co está MUERTO: no volver a usarlo.
+  router_bases:
+    - https://router.huggingface.co/hf-inference/models
   timeout_s: 180
 
 pollinations:

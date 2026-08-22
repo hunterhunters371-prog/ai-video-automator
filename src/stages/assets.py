@@ -3,15 +3,21 @@
 Entrada: storyboard.json.
 Salida:  assets_map.json + archivos en projects/<id>/assets/.
 Orden de resolución por escena: (1) ruta explícita en repo/proyecto,
-(2) stock de video Pexels si hay clave, (3) imagen IA gratuita (HF Inference
-o Pollinations, según configs/images.yml), (4) foto de stock Pexels,
-(5) fondo de color de la plantilla (siempre funciona, sin claves).
+(2) stock de video Pexels si hay clave, (3) imagen IA gratuita (Inference
+Providers de HF o Pollinations, según configs/images.yml), (4) foto de stock
+Pexels, (5) fondo de color de la plantilla (siempre funciona, sin claves).
 Video IA gratis: no existe API confiable sin pago — el video sale de stock
 o de material del usuario.
+
+Nota (22 ago 2026): ningún fallo de proveedor se traga en silencio. Cada
+recurso descartado deja motivo en stdout y en assets_map.json["_warnings"].
+Sin eso, un pipeline "en verde" puede haber caído a fondos de color sin avisar
+— fue exactamente lo que pasó con video-0001.
 """
 from __future__ import annotations
 
 import base64
+import io
 import json
 import shutil
 import subprocess
@@ -25,12 +31,15 @@ from .base import BaseStage, StageError
 
 PEXELS_VIDEOS = "https://api.pexels.com/videos/search"
 PEXELS_PHOTOS = "https://api.pexels.com/v1/search"
-HF_URL = "https://api-inference.huggingface.co/models/{model}"
-# [no verificado] endpoint exacto de la API nueva de Pollinations:
-# si falla en la primera ejecución real, confirmar en https://gen.pollinations.ai/docs
-POLLINATIONS_URL = "https://gen.pollinations.ai/v1/images/generations"
+# api-inference.huggingface.co MURIÓ: HF movió la inferencia al router de
+# Inference Providers y cada modelo lo sirve un proveedor distinto (doc oficial:
+# huggingface.co/docs/inference-providers/tasks/text-to-image). Por eso la vía
+# preferida es el SDK huggingface_hub, que enruta solo; las rutas HTTP de
+# respaldo se declaran en configs/images.yml (hf.router_bases).
+POLLINATIONS_URL = "https://gen.pollinations.ai/v1/images/generations"  # [no verificado]
 VIDEO_EXT = {".mp4", ".mov", ".webm", ".mkv"}
 AUDIO_EXT = {".mp3", ".wav", ".ogg", ".m4a"}
+MIN_IMAGE_BYTES = 10_000
 
 
 def _kind(path: Path) -> str:
@@ -52,6 +61,15 @@ def _download(url: str, dest: Path) -> None:
 class AssetsStage(BaseStage):
     stage = Stage.ASSETS
 
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+
+    def _warn(self, msg: str) -> None:
+        """Motivo por el que se descartó un recurso. Nunca en silencio."""
+        if msg not in self.warnings:
+            self.warnings.append(msg)
+            print(f"    [!] {msg}", flush=True)
+
     def run(self, project: Project) -> dict:
         board = json.loads((project.path / "storyboard.json").read_text(encoding="utf-8"))
         template = config.load_template(board.get("template") or "roblox")
@@ -70,6 +88,18 @@ class AssetsStage(BaseStage):
         music = self._music(project, assets_dir)
         if music:
             amap["music"] = music
+
+        origins = [v["origin"] for k, v in amap.items()
+                   if k.startswith("seg") and isinstance(v, dict)]
+        fallbacks = sum(1 for o in origins if o == "fallback_color")
+        if origins and fallbacks == len(origins):
+            self._warn(f"TODAS las escenas ({fallbacks}) usan fondo de color: "
+                       "revisa los motivos de arriba antes de publicar el video")
+        if origins:
+            resumen = ", ".join(f"{o}x{origins.count(o)}" for o in sorted(set(origins)))
+            print(f"    escenas: {len(origins)} · {resumen}", flush=True)
+
+        amap["_warnings"] = list(self.warnings)
         amap_path.write_text(json.dumps(amap, ensure_ascii=False, indent=2), encoding="utf-8")
         return {"assets_map": "assets_map.json"}
 
@@ -84,6 +114,7 @@ class AssetsStage(BaseStage):
                     shutil.copy2(candidate, dest)
                     return {"path": str(dest.relative_to(project.path)),
                             "kind": _kind(dest), "origin": "repo"}
+            self._warn(f"asset explícito no encontrado: {src}")
         prompt = ((seg.get("asset") or {}).get("prompt")
                   or seg.get("on_screen_text") or project.data["idea"]["text"])
         # 2. stock de video
@@ -92,7 +123,11 @@ class AssetsStage(BaseStage):
             return {"path": str(video.relative_to(project.path)),
                     "kind": "video", "origin": "pexels"}
         # 3. imagen IA gratuita
-        ai = self._ai_image(prompt, dest_base)
+        try:
+            ai = self._ai_image(prompt, dest_base)
+        except Exception as exc:  # degradar con gracia, pero dejando el motivo
+            self._warn(f"IA imagen: error inesperado {type(exc).__name__}: {exc}")
+            ai = None
         if ai:
             return {"path": str(ai.relative_to(project.path)),
                     "kind": "image",
@@ -120,8 +155,11 @@ class AssetsStage(BaseStage):
     # -- proveedores ---------------------------------------------------------
     def _pexels(self, query: str, dest_base: Path, videos: bool) -> Path | None:
         if not config.PEXELS_API_KEY:
+            self._warn("PEXELS_API_KEY vacía: sin video ni foto de stock "
+                       "(clave gratis en docs/SETUP.md §3)")
             return None
         headers = {"Authorization": config.PEXELS_API_KEY}
+        tipo = "video" if videos else "foto"
         try:
             if videos:
                 r = requests.get(PEXELS_VIDEOS, headers=headers, timeout=30,
@@ -144,62 +182,156 @@ class AssetsStage(BaseStage):
             dest = dest_base.with_suffix(".jpg")
             _download(photos[0]["src"]["large2x"], dest)
             return dest
-        except Exception:
-            return None  # cualquier fallo de stock cae al siguiente recurso
+        except Exception as exc:  # cualquier fallo de stock cae al siguiente recurso
+            self._warn(f"Pexels {tipo}: {type(exc).__name__}: {str(exc)[:160]}")
+            return None
 
     def _ai_image(self, prompt: str, dest_base: Path) -> Path | None:
         cfg = config.IMAGES or {}
         provider = cfg.get("provider", "off")
-        width = cfg.get("width", 1080)
-        height = cfg.get("height", 1920)
-        try:
-            if provider == "hf" and config.HF_TOKEN:
-                return self._hf_image(prompt, dest_base, cfg, width, height)
-            if provider == "pollinations" and config.POLLINATIONS_KEY:
-                return self._pollinations_image(prompt, dest_base, cfg, width, height)
-        except Exception:
-            return None  # cualquier fallo de IA cae al siguiente recurso
+        width = int(cfg.get("width", 1080))
+        height = int(cfg.get("height", 1920))
+        if provider == "off":
+            return None
+        if provider == "hf":
+            if not config.HF_TOKEN:
+                self._warn("images.yml pide 'hf' pero HF_TOKEN está vacío "
+                           "(corre: sh setup-env.sh)")
+                return None
+            return self._hf_image(prompt, dest_base, cfg, width, height)
+        if provider == "pollinations":
+            if not config.POLLINATIONS_KEY:
+                self._warn("images.yml pide 'pollinations' pero POLLINATIONS_KEY está vacía")
+                return None
+            return self._pollinations_image(prompt, dest_base, cfg, width, height)
+        self._warn(f"images.yml: proveedor de imagen desconocido {provider!r} "
+                   "(usa hf | pollinations | off)")
         return None
 
     def _hf_image(self, prompt: str, dest_base: Path, cfg: dict,
                   width: int, height: int) -> Path | None:
-        model = cfg.get("hf", {}).get("model", "black-forest-labs/FLUX.1-schnell")
-        timeout = cfg.get("hf", {}).get("timeout_s", 180)
-        r = requests.post(
-            HF_URL.format(model=model),
-            headers={"Authorization": f"Bearer {config.HF_TOKEN}"},
-            json={"inputs": f"{prompt}, vertical 9:16"},
-            timeout=timeout,
-        )
-        if r.status_code != 200 or "image" not in r.headers.get("content-type", ""):
+        """Intenta cada modelo de configs/images.yml: primero por SDK, luego HTTP."""
+        hf_cfg = cfg.get("hf") or {}
+        models = hf_cfg.get("models") or ([hf_cfg["model"]] if hf_cfg.get("model") else [])
+        if not models:
+            self._warn("images.yml: hf.models está vacío")
             return None
+        timeout = int(hf_cfg.get("timeout_s", 180))
+        full_prompt = f"{prompt}, vertical 9:16"
         dest = dest_base.with_suffix(".png")
-        dest.write_bytes(r.content)
-        return dest if dest.stat().st_size > 10_000 else None
+        for model in models:
+            data = (self._hf_sdk_image(full_prompt, model, width, height, timeout)
+                    or self._hf_http_image(full_prompt, model, hf_cfg, timeout))
+            if not data:
+                continue
+            dest.write_bytes(data)
+            size = dest.stat().st_size
+            if size > MIN_IMAGE_BYTES:
+                return dest
+            self._warn(f"IA imagen {model}: solo {size} bytes "
+                       f"(< {MIN_IMAGE_BYTES}), descartada")
+        return None
+
+    def _hf_sdk_image(self, prompt: str, model: str, width: int, height: int,
+                      timeout: int) -> bytes | None:
+        """Vía preferida: el SDK enruta al proveedor vivo de cada modelo.
+
+        Doc oficial: huggingface.co/docs/inference-providers (Quick Start
+        text-to-image). Requiere huggingface_hub + Pillow (requirements.txt).
+        """
+        try:
+            from huggingface_hub import InferenceClient
+        except ImportError:
+            self._warn("huggingface_hub no instalado: pip install -r requirements.txt")
+            return None
+        try:
+            client = InferenceClient(api_key=config.HF_TOKEN, timeout=timeout)
+        except Exception as exc:
+            self._warn(f"IA imagen SDK: no se pudo crear el cliente "
+                       f"({type(exc).__name__}: {str(exc)[:120]})")
+            return None
+        # Algunos proveedores rechazan width/height: reintento sin tamaño.
+        for extra in ({"width": width, "height": height}, {}):
+            etiqueta = "con tamaño" if extra else "sin tamaño"
+            try:
+                image = client.text_to_image(prompt, model=model, **extra)
+            except Exception as exc:
+                self._warn(f"IA imagen SDK {model} ({etiqueta}): "
+                           f"{type(exc).__name__}: {str(exc)[:180]}")
+                continue
+            try:
+                buf = io.BytesIO()
+                image.save(buf, format="PNG")
+                return buf.getvalue()
+            except Exception as exc:
+                self._warn(f"IA imagen SDK {model}: no se pudo serializar "
+                           f"({type(exc).__name__})")
+                return None
+        return None
+
+    def _hf_http_image(self, prompt: str, model: str, hf_cfg: dict,
+                       timeout: int) -> bytes | None:
+        """Respaldo sin SDK: POST a las rutas del router de configs/images.yml.
+
+        Formato oficial de la tarea text-to-image: {"inputs": ...} → bytes de
+        imagen. Un 404/410 aquí significa que ESE proveedor no sirve ESE modelo.
+        """
+        for base in hf_cfg.get("router_bases") or []:
+            url = f"{str(base).rstrip('/')}/{model}"
+            try:
+                r = requests.post(
+                    url,
+                    headers={"Authorization": f"Bearer {config.HF_TOKEN}"},
+                    json={"inputs": prompt},
+                    timeout=timeout,
+                )
+            except Exception as exc:
+                self._warn(f"IA imagen HTTP {url}: {type(exc).__name__}")
+                continue
+            if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
+                return r.content
+            self._warn(f"IA imagen HTTP {url}: HTTP {r.status_code} · {r.text[:120]}")
+        return None
 
     def _pollinations_image(self, prompt: str, dest_base: Path, cfg: dict,
                             width: int, height: int) -> Path | None:
-        model = cfg.get("pollinations", {}).get("model", "flux")
-        timeout = cfg.get("pollinations", {}).get("timeout_s", 180)
-        r = requests.post(
-            POLLINATIONS_URL,
-            headers={"Authorization": f"Bearer {config.POLLINATIONS_KEY}"},
-            json={"model": model, "prompt": prompt,
-                  "size": f"{width}x{height}", "n": 1,
-                  "response_format": "b64_json"},
-            timeout=timeout,
-        )
-        if r.status_code != 200:
+        poll_cfg = cfg.get("pollinations") or {}
+        model = poll_cfg.get("model", "flux")
+        timeout = int(poll_cfg.get("timeout_s", 180))
+        try:
+            r = requests.post(
+                POLLINATIONS_URL,
+                headers={"Authorization": f"Bearer {config.POLLINATIONS_KEY}"},
+                json={"model": model, "prompt": prompt,
+                      "size": f"{width}x{height}", "n": 1,
+                      "response_format": "b64_json"},
+                timeout=timeout,
+            )
+        except Exception as exc:
+            self._warn(f"Pollinations: {type(exc).__name__}: {str(exc)[:160]}")
             return None
-        data = (r.json().get("data") or [{}])[0]
+        if r.status_code != 200:
+            self._warn(f"Pollinations HTTP {r.status_code}: {r.text[:120]} "
+                       "(endpoint [no verificado]: confirmar en gen.pollinations.ai/docs)")
+            return None
+        try:
+            data = (r.json().get("data") or [{}])[0]
+        except Exception:
+            self._warn("Pollinations: la respuesta no trae JSON con 'data'")
+            return None
         dest = dest_base.with_suffix(".png")
         if data.get("b64_json"):
             dest.write_bytes(base64.b64decode(data["b64_json"]))
         elif data.get("url"):
             _download(data["url"], dest)
         else:
+            self._warn("Pollinations: sin b64_json ni url en la respuesta")
             return None
-        return dest if dest.stat().st_size > 10_000 else None
+        size = dest.stat().st_size
+        if size > MIN_IMAGE_BYTES:
+            return dest
+        self._warn(f"Pollinations: imagen de {size} bytes, descartada")
+        return None
 
     def _music(self, project: Project, assets_dir: Path) -> dict | None:
         lib = config.ROOT / "assets" / "music"

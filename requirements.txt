@@ -9,6 +9,13 @@ edge-tts>=6.1.0
 # Subtítulos con tiempos por palabra (transcripción alineada de la narración)
 faster-whisper>=1.0.0
 
+# Imágenes IA en ASSETS vía Inference Providers de Hugging Face.
+# huggingface_hub ya entraba como dependencia de faster-whisper; se fija explícito
+# porque ahora es la vía oficial de enrutado a proveedor (text_to_image).
+# Pillow: text_to_image devuelve un objeto PIL, no bytes.
+huggingface_hub>=0.34
+Pillow>=10.0
+
 # NOTA: FFmpeg es un binario EXTERNO obligatorio (no se instala por pip).
 #   - Comprobar instalación: ffmpeg -version
 #   - Se usa para: montaje, zoom/pan, transiciones, mezcla de audio,
