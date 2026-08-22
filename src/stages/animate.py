@@ -22,6 +22,8 @@ proveedor no toca el montaje.
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from pathlib import Path
 
 from .. import config
@@ -99,20 +101,45 @@ class AnimateStage(BaseStage):
                 f"Guía paso a paso con los prompts listos para copiar: "
                 f"projects/{project.project_id}/{guia} "
                 f"(alternativa si se agota la cuota: {otra}). "
-                f"Genera cada clip, descárgalo, súbelo a "
-                f"projects/{project.project_id}/clips/ con el nombre EXACTO "
-                f"(menú ⋮ → Upload) y luego: "
+                f"Genera cada clip, descárgalo y súbelo a "
+                f"projects/{project.project_id}/clips/ (menú ⋮ → Upload) con ese "
+                f"nombre: las tildes y las mayúsculas dan igual, y vale .mp4, "
+                f".mov, .webm o .mkv. Luego: "
                 f"python -m src.main resume {project.project_id}"
             )
         return {"clips": "manifiesto_animacion.json"}
 
 
+def _clave(nombre: str) -> str:
+    """Clave de comparación de nombres: sin tildes, minúsculas, solo alfanumérico.
+
+    Los nombres salen del personaje (`l002_limón`) y los teclea una persona al
+    renombrar la descarga. macOS escribe las tildes descompuestas (NFD) y Linux
+    compuestas (NFC): dos nombres idénticos a la vista no coinciden como texto.
+    Comparando una versión neutra, `l002_limon.mp4`, `l002_limón.mp4` y
+    `L002_LIMÓN.MP4` son el mismo clip.
+    """
+    base = unicodedata.normalize("NFKD", nombre)
+    base = "".join(c for c in base if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "", base.lower())
+
+
 def _find_clip(clips_dir: Path, stem: str) -> Path | None:
-    """Acepta cualquier extensión de video: Meta AI y Flow no siempre dan .mp4."""
-    for ext in CLIP_EXTS:
-        cand = clips_dir / f"{stem}{ext}"
-        if cand.exists() and cand.stat().st_size >= MIN_CLIP_BYTES:
-            return cand
+    """Clip de `stem` en cualquier extensión de video, tolerante con el nombre."""
+    objetivo = _clave(stem)
+    pequenos = []
+    for cand in sorted(clips_dir.iterdir()):
+        if not cand.is_file() or cand.suffix.lower() not in CLIP_EXTS:
+            continue
+        if _clave(cand.stem) != objetivo:
+            continue
+        if cand.stat().st_size < MIN_CLIP_BYTES:
+            pequenos.append(cand)  # descarga cortada: avisar, no ignorar
+            continue
+        return cand
+    for p in pequenos:
+        print(f"  !! {p.name} pesa solo {p.stat().st_size // 1024} KB: parece una "
+              f"descarga incompleta, lo cuento como faltante", flush=True)
     return None
 
 
@@ -295,8 +322,10 @@ def _paso_final(pid: str) -> list[str]:
     return [
         "## Paso 3 — Subir y reanudar",
         "",
-        "1. Renombra cada archivo EXACTO como el título de su bloque",
-        "   (`l002_limon.mp4`, ...). Vale .mp4, .mov o .webm.",
+        "1. Renombra cada archivo como el título de su bloque, por ejemplo",
+        "   `l002_limon.mp4`. **Las tildes y las mayúsculas dan igual**",
+        "   (`l002_limón.MP4` también vale) y sirve .mp4, .mov, .webm o .mkv.",
+        "   Lo único que importa es el `lNNN_personaje` del principio.",
         f"2. Menú ⋮ → **Upload** → súbelos a `projects/{pid}/clips/`.",
         f"3. `python -m src.main resume {pid}`",
         "",

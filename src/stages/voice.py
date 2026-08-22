@@ -23,6 +23,7 @@ import json
 import re
 import subprocess
 import time
+import unicodedata
 from pathlib import Path
 
 import edge_tts
@@ -225,7 +226,15 @@ def _tts(text: str, voice: str, cfg: dict, out: Path) -> None:
 
 
 def _slug(text: str) -> str:
-    s = re.sub(r"[^\w-]+", "_", text.strip().lower())
+    """Nombre de archivo en ASCII plano: sin tildes ni ñ.
+
+    Estos nombres se los tiene que teclear el usuario al subir los clips de
+    ANIMATE, y una tilde puede llegar en dos formas Unicode distintas que no
+    coinciden entre sí (NFC en Linux, NFD en macOS).
+    """
+    base = unicodedata.normalize("NFKD", text.strip().lower())
+    base = "".join(c for c in base if not unicodedata.combining(c))
+    s = re.sub(r"[^a-z0-9-]+", "_", base)
     return s.strip("_") or "voz"
 
 
