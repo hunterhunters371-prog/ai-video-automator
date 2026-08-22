@@ -7,41 +7,47 @@ Pipeline autónomo idea → Short vertical 9:16: research (web+LLM) → script (
 (whisper + ASS) → rendering (ffmpeg) → QC (ffprobe). Docs: README.md,
 docs/ARQUITECTURA.md, docs/MVP.md, docs/SETUP.md.
 
-## Estado actual (22 ago 2026, ~21:15 UTC)
+## Estado actual (22 ago 2026, ~22:00 UTC)
 
-**M1 CERRADO: primer Short renderizado de punta a punta.**
+**M1 CERRADO y la generación de imágenes IA VERIFICADA en producción.**
 
-- `video-0001` COMPLETED, 9/9 etapas, 89 s de reloj (20:42:43 → 20:44:12 UTC).
-  Salida: `renders/video-0001.mp4` (533 KB), voz de 20.45 s, QC en verde
-  (existe, duración, audio, 1080x1920, 30 fps, sin negros ni congelados,
-  subtítulos en safe zone, assets presentes).
-- Bloqueo del LLM resuelto: el token HF debe ser **fine-grained CON el permiso
-  «Make calls to Inference Providers»**. Un token de solo *read* da 401/403.
-  Probado en vivo: `router.huggingface.co/v1/chat/completions` → HTTP 200.
+- `video-0001` COMPLETED (89 s): primer Short de punta a punta, pero con las 6
+  escenas en `fallback_color` (destapó el bug de imágenes). Se conserva como
+  primer éxito histórico.
+- `video-0002` COMPLETED (~121 s): **las 5 escenas en `ia:hf`** — el fix de
+  imágenes funciona contra la cuenta real. También quedaron verificados los
+  avisos nuevos (`[!] PEXELS_API_KEY vacía`) y el progreso por etapa en
+  consola. Idea usada: el placeholder literal "tu idea aquí" → fue video de
+  prueba; el primero con idea real será video-0003.
+- Token HF fine-grained CON el permiso «Make calls to Inference Providers»:
+  validado en ambas vías (LLM 200 OK + imágenes 200 OK). Un token de solo
+  *read* da 401/403.
 
-## Lo que destapó el primer video (arreglado hoy, PENDIENTE de verificar)
+## Diagnóstico del bug de imágenes (historial, ya resuelto)
 
-1. **Las 6 escenas salieron en fondo de color** (`origin: fallback_color`) y el
-   pipeline igual dio verde: QC es técnico, no estético. ASSETS tardó 1 s — la
-   señal de que no generó nada.
-2. **Causa**: `api-inference.huggingface.co` está retirado. Además, en el router
-   nuevo cada modelo lo sirve un proveedor distinto: `hf-inference` ya NO sirve
-   FLUX (devuelve 410; verificado con curl).
-3. **Causa agravante**: `except Exception: return None` se tragaba el fallo sin
+1. video-0001: 6/6 escenas en `fallback_color` y el pipeline dio verde: QC es
+   técnico, no estético. ASSETS tardó 1 s — la señal de que no generó nada.
+2. Causa: `api-inference.huggingface.co` retirado; en el router nuevo cada
+   modelo lo sirve un proveedor distinto y `hf-inference` ya NO sirve FLUX
+   (410 verificado con curl).
+3. Causa agravante: `except Exception: return None` se tragaba el fallo sin
    dejar rastro en el log.
-4. **Consola muda**: el orquestador solo escribía a `logs/<id>.log`; una corrida
+4. Consola muda: el orquestador solo escribía a `logs/<id>.log`; una corrida
    exitosa era indistinguible de un cuelgue.
 
-**Arreglos ya en `main`:**
+**Arreglos en `main` (commits f0c540e y 514204d):**
 
 - `src/stages/assets.py`: text-to-image vía `huggingface_hub` (enruta solo al
   proveedor vivo de cada modelo) con respaldo HTTP al router; lista de modelos
-  en `configs/images.yml`; **todo fallo deja motivo** en stdout y en
+  en `configs/images.yml`; todo fallo deja motivo en stdout y en
   `assets_map.json["_warnings"]`, con aviso explícito si TODAS las escenas caen
   al fondo de color.
-- `configs/images.yml`: modelos con proveedor vivo según la doc oficial de
-  ago-2026 (nscale → FLUX.1-schnell, hf-inference → SD3-medium,
-  fal-ai/replicate/wavespeed → FLUX.1-dev).
+- `configs/images.yml`: cascada de modelos con proveedor vivo según la doc
+  oficial de ago-2026 (nscale → FLUX.1-schnell, hf-inference → SD3-medium,
+  fal-ai/replicate/wavespeed → FLUX.1-dev). Si un modelo muere (404/410 en los
+  warnings): ajustar la lista mirando la doc viva
+  (huggingface.co/docs/inference-providers/tasks/text-to-image) y re-probar con
+  `python scripts/probar-imagen.py`.
 - `requirements.txt`: `huggingface_hub` y `Pillow` explícitos.
 - `scripts/probar-imagen.py`: prueba el MISMO camino de ASSETS en segundos, sin
   correr el pipeline y sin exponer el token.
@@ -49,26 +55,16 @@ docs/ARQUITECTURA.md, docs/MVP.md, docs/SETUP.md.
   baja whisper la 1ª vez, y mensaje claro cuando un `resume` no tiene nada que
   reanudar.
 
-> [no verificado] Los tres modelos de `images.yml` y el respaldo HTTP no se han
-> ejecutado aún contra la cuenta del usuario. Verificar con el paso 2 de abajo
-> ANTES de dar por buena la generación de imágenes.
-
 ## Cómo continuar (siguiente paso real)
 
-1. `cd ~/ai-video-automator && git pull && pip install -r requirements.txt`
-2. `python scripts/probar-imagen.py`
-   - éxito → imprime la ruta y el tamaño de la imagen generada.
-   - fallo → lista el motivo de cada modelo (401/403 = token; 404/410 = ese
-     proveedor ya no sirve ese modelo → cambiar la lista en `configs/images.yml`
-     con `hf models ls --warm --pipeline-tag text-to-image`).
-3. `python -m src.main new "<idea>"` → crea video-0002 con imágenes reales.
-   No reutilizar `resume video-0001`: ASSETS es idempotente y no repite trabajo
-   ya hecho, además video-0001 se conserva como primer éxito histórico.
-4. Comprobación posterior:
-   `grep -o '"origin": "[^"]*"' projects/video-0002/assets_map.json`
+1. `python -m src.main new "<idea real>"` → video-0003, el primero con tema de
+   verdad. No usar `resume` sobre videos COMPLETED: no re-ejecuta etapas.
+2. Comprobación posterior:
+   `grep -o '"origin": "[^"]*"' projects/video-0003/assets_map.json`
    → debe decir `ia:hf`, no `fallback_color`.
-5. Opcional (2 min, gratis): `PEXELS_API_KEY` en `.env` (docs/SETUP.md §3)
-   habilita video y foto de stock como recurso intermedio.
+3. Opcional (2 min, gratis): `PEXELS_API_KEY` en `.env` (docs/SETUP.md §3)
+   habilita video y foto de stock como recurso intermedio y elimina el aviso
+   `[!] PEXELS_API_KEY vacía`.
 
 ## Reglas aprendidas — no repetir
 
@@ -81,7 +77,7 @@ docs/ARQUITECTURA.md, docs/MVP.md, docs/SETUP.md.
 3. `sh s.sh` / `setup-env.sh` **recrea el `.env` desde la plantilla**: reconfigura
    proveedor y token en cada corrida. Su comprobación `1 y 1` solo valida
    formato, NO hace una llamada real — por eso un token sin permiso pasa el
-   setup y falla luego en RESEARCH. Prueba real: el curl del punto 2 de arriba.
+   setup y falla luego en RESEARCH.
 4. **GitHub Models fue retirado permanentemente el 30-jul-2026**: el proveedor
    `github` muere con aviso claro. Vivos y gratis: `hf` (recomendado: un token =
    LLM + imágenes) y `pollinations` (ruta de texto [no verificado]).
