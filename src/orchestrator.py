@@ -5,9 +5,12 @@ Responsabilidades:
   - Ejecutar etapas en orden guardando checkpoint tras cada una.
   - Reanudar desde el último estado completado (`resume`).
   - Registrar errores sin destruir el trabajo realizado.
+  - Log por proyecto en logs/<id>.log.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .state import PIPELINE_ORDER, Project, Stage
@@ -40,7 +43,7 @@ class Orchestrator:
     def from_repo_root(cls) -> "Orchestrator":
         return cls(Path(__file__).resolve().parent.parent)
 
-    # -- comandos públicos -------------------------------------------------
+    # -- comandos públicos --------------------------------------------------
     def create_and_run(
         self, idea: str, template: str | None = None, duration: int | None = None
     ) -> Project:
@@ -49,18 +52,40 @@ class Orchestrator:
             self.root, project_id, idea, template=template, duration=duration
         )
         project.mark_completed(Stage.IDEA)
+        self._log(project, f"IDEA: {idea!r}")
         self._run_pipeline(project)
         return project
 
     def resume(self, project_id: str) -> Project:
         """RESUME VIDEO #NNN → continúa desde el primer estado no completado."""
         project = Project.load(self.root, project_id)
+        self._log(project, f"resume desde {project.next_stage()}")
         self._run_pipeline(project)
         return project
 
     def status(self, project_id: str | None = None) -> None:
-        # TODO(M1): tabla con estado, progreso, errores y duración por proyecto.
-        raise NotImplementedError("M1: panel de estado por consola")
+        if project_id:
+            data = Project.load(self.root, project_id).data
+            print(f"{data['id']} · {data['state']} · "
+                  f"{len(data['completed'])}/{len(PIPELINE_ORDER)} etapas")
+            print(f"idea: {data['idea']['text']}")
+            for key, val in data["artifacts"].items():
+                print(f"  ✓ {key}: {val}")
+            for err in data["errors"]:
+                print(f"  ✗ {err['stage']}: {err['error'][:120]}")
+            return
+        rows = []
+        for pj in sorted((self.root / "projects").glob("video-*/project.json")):
+            rows.append(json.loads(pj.read_text(encoding="utf-8")))
+        if not rows:
+            print('Sin proyectos. Crea uno: python -m src.main new "<idea>"')
+            return
+        for data in rows:
+            bar = " ".join(
+                ("✓" if st.value in data["completed"] else "·") for st in PIPELINE_ORDER
+            )
+            print(f"{data['id']}  {data['state']:<10} {bar}  "
+                  f"{data['idea']['text'][:38]}")
 
     def batch(self, source: str, count: int = 10) -> None:
         # TODO(M3): matriz de diversidad (subtema × ángulo × plantilla × duración)
@@ -72,7 +97,7 @@ class Orchestrator:
         # ideas/processed/. Contrato definido en docs/ARQUITECTURA.md §3.2.
         raise NotImplementedError("M3: integración con el agente de tendencias")
 
-    # -- núcleo -------------------------------------------------------------
+    # -- núcleo ---------------------------------------------------------------
     def _run_pipeline(self, project: Project) -> None:
         """Ejecuta desde el primer estado pendiente. Checkpoint tras cada etapa."""
         while True:
@@ -80,17 +105,28 @@ class Orchestrator:
             if stage is None:
                 project.data["state"] = Stage.COMPLETED.value
                 project.save()
+                self._log(project, "COMPLETED")
                 return
             runner = STAGE_REGISTRY.get(stage)
             if runner is None:  # IDEA se marca al crear el proyecto
                 project.mark_completed(stage)
                 continue
+            self._log(project, f"> {stage.value}")
             try:
                 artifacts = runner().run_with_retry(project)
             except Exception as exc:  # registrar y conservar TODO el trabajo
                 project.mark_failed(stage, str(exc))
+                self._log(project, f"x {stage.value}: {exc}")
                 raise
             project.mark_completed(stage, artifacts)
+            self._log(project, f"ok {stage.value}")
+
+    def _log(self, project: Project, msg: str) -> None:
+        logs = self.root / "logs"
+        logs.mkdir(exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with open(logs / f"{project.project_id}.log", "a", encoding="utf-8") as fh:
+            fh.write(f"{ts} {msg}\n")
 
     def _next_id(self) -> str:
         projects = self.root / "projects"

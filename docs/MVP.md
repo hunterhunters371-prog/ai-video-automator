@@ -61,3 +61,11 @@ produce un video vertical 9:16 (~30 s) con:
 1. `ffmpeg` instalado en la máquina que ejecute el pipeline.
 2. Una clave de LLM (OpenAI o Anthropic) en `.env`.
 3. (Opcional) clave de Pexels para stock; si no, usar material propio en `assets/`.
+
+## Estado (22 ago 2026)
+
+- M0 ✅ (commit base).
+- M1: las 8 etapas + `status` del CLI **implementadas en código** (capa
+  `src/config.py` + `src/llm.py` + `src/websearch.py`; etapas research → qc).
+  **Pendiente de verificación**: primera ejecución real con las claves del
+  usuario (`docs/SETUP.md`). No verificado hasta generar el primer Short.
