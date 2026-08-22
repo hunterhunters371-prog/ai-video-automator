@@ -6,6 +6,11 @@ con extensión de video). Si falta alguno: escribe `manifiesto_animacion.json`
 + las guías de prompts y PAUSA el proyecto (PipelinePaused). Si están todos,
 completa la etapa y EDITING los monta.
 
+Salida de emergencia: con `SIN_CLIPS=1` no pausa. EDITING ya cae a la imagen
+fija de la escena cuando una línea no tiene clip, así que el episodio se monta
+entero (voces, subtítulos, música) como borrador. Sirve para ver el resultado
+sin gastar cuota y como plan B cuando el generador se agota a media tarea.
+
 Imágenes de referencia: si el usuario deja una imagen en `projects/<id>/refs/`
 con el nombre del personaje (`limon.png`, `fresa.jpg`), las guías cambian a
 modo referencia — subir esa imagen al generador en vez de crear el personaje
@@ -32,6 +37,7 @@ proveedor no toca el montaje.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import unicodedata
@@ -111,6 +117,18 @@ class AnimateStage(BaseStage):
             (project.path / "prompts_flow.md").write_text(
                 _prompts_flow(project, script, faltantes, refs), encoding="utf-8"
             )
+            if os.environ.get("SIN_CLIPS"):
+                # Borrador: EDITING usa la imagen fija de la escena en cada
+                # línea sin clip. Mejor un episodio completo que un bloqueo.
+                print(
+                    f"  … SIN_CLIPS=1: {len(faltantes)} de {len(dialogo)} líneas "
+                    f"sin clip usarán la imagen fija de su escena (borrador)",
+                    flush=True,
+                )
+                return {
+                    "clips": "manifiesto_animacion.json",
+                    "sin_clips": len(faltantes),
+                }
             prov = str((config.PIPELINE.get("animate") or {}).get("provider", "meta"))
             guia = GUIAS.get(prov, GUIAS["meta"])
             otra = GUIAS["flow"] if guia == GUIAS["meta"] else GUIAS["meta"]
@@ -132,7 +150,10 @@ class AnimateStage(BaseStage):
                 f"projects/{project.project_id}/clips/ (menú ⋮ → Upload) con ese "
                 f"nombre: las tildes y las mayúsculas dan igual, y vale .mp4, "
                 f".mov, .webm o .mkv. Luego: "
-                f"python -m src.main resume {project.project_id}"
+                f"python -m src.main resume {project.project_id}\n"
+                f"¿Prefieres ver el episodio ya, con imágenes fijas en lugar de "
+                f"clips? SIN_CLIPS=1 python -m src.main resume "
+                f"{project.project_id}"
             )
         return {"clips": "manifiesto_animacion.json"}
 
@@ -478,4 +499,8 @@ def _paso_final(pid: str) -> list[str]:
         "",
         "No hace falta tenerlos todos de una vez: sube los que lleves, reanuda,",
         "y el pipeline volverá a pausar pidiendo solo los que falten.",
+        "",
+        "¿Prefieres ver el episodio ya, sin esperar a los clips? Con",
+        f"`SIN_CLIPS=1 python -m src.main resume {pid}` se monta entero usando la",
+        "imagen fija de cada escena en las líneas que aún no tienen clip.",
     ]
