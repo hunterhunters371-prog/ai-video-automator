@@ -6,6 +6,12 @@ con extensión de video). Si falta alguno: escribe `manifiesto_animacion.json`
 + las guías de prompts y PAUSA el proyecto (PipelinePaused). Si están todos,
 completa la etapa y EDITING los monta.
 
+Imágenes de referencia: si el usuario deja una imagen en `projects/<id>/refs/`
+con el nombre del personaje (`limon.png`, `fresa.jpg`), las guías cambian a
+modo referencia — subir esa imagen al generador en vez de crear el personaje
+desde texto. Es la forma más eficaz de que no cambie de cara entre clips ni
+entre episodios.
+
 Los clips llegan a mano (descarga del navegador + Upload), así que aquí se
 comprueban de verdad con ffprobe: un archivo corrupto o sin pista de vídeo
 debe detectarse al recibirlo, no tres etapas después en RENDERING.
@@ -39,6 +45,7 @@ from .script import NARRATOR
 MIN_CLIP_BYTES = 100_000  # un mp4 válido de 4-8 s pesa mucho más que esto
 MIN_CLIP_S = 0.5
 CLIP_EXTS = (".mp4", ".mov", ".webm", ".mkv")
+REF_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 GUIAS = {"meta": "prompts_meta.md", "flow": "prompts_flow.md"}
 
 
@@ -61,12 +68,16 @@ class AnimateStage(BaseStage):
         contextos = _contextos_escena(project, lines)
         clips_dir = project.path / "clips"
         clips_dir.mkdir(exist_ok=True)
+        refs_dir = project.path / "refs"
+        refs_dir.mkdir(exist_ok=True)
+        refs = {nombre: _find_ref(refs_dir, nombre) for nombre in personajes}
 
         manifiesto, faltantes = [], []
         for ln in dialogo:
             stem = Path(ln["archivo"]).stem
             clip = _find_clip(clips_dir, stem)
             p = personajes.get(ln["quien"], {})
+            ref = refs.get(ln["quien"])
             item = {
                 "clip": (str(clip.relative_to(project.path)) if clip
                          else f"clips/{stem}.mp4"),
@@ -74,6 +85,8 @@ class AnimateStage(BaseStage):
                 "quien": ln["quien"],
                 "descriptor": p.get("descriptor", ""),
                 "personalidad": p.get("personalidad", ""),
+                # la imagen maestra del personaje: la usará la etapa de Colab
+                "referencia": (str(ref.relative_to(project.path)) if ref else None),
                 "texto": ln["texto"],
                 "emocion": ln.get("emocion") or "neutra",
                 "escena": ln["escena"],
@@ -93,20 +106,28 @@ class AnimateStage(BaseStage):
             # Las dos guías, siempre: si un proveedor agota su cuota diaria se
             # sigue con el otro sin re-ejecutar nada.
             (project.path / "prompts_meta.md").write_text(
-                _prompts_meta(project, script, faltantes), encoding="utf-8"
+                _prompts_meta(project, script, faltantes, refs), encoding="utf-8"
             )
             (project.path / "prompts_flow.md").write_text(
-                _prompts_flow(project, script, faltantes), encoding="utf-8"
+                _prompts_flow(project, script, faltantes, refs), encoding="utf-8"
             )
             prov = str((config.PIPELINE.get("animate") or {}).get("provider", "meta"))
             guia = GUIAS.get(prov, GUIAS["meta"])
             otra = GUIAS["flow"] if guia == GUIAS["meta"] else GUIAS["meta"]
             nombres = ", ".join(f["clip"] for f in faltantes)
+            con_ref = [n for n, r in refs.items() if r]
+            aviso_ref = (
+                f" Usando como referencia: {', '.join(con_ref)}." if con_ref else
+                " Consejo: si dejas una imagen del personaje en "
+                f"projects/{project.project_id}/refs/ (limon.png, fresa.jpg) y "
+                "reanudas, la guía se reescribe para partir de ella y el "
+                "personaje deja de cambiar de cara."
+            )
             raise PipelinePaused(
                 f"faltan {len(faltantes)} clips de diálogo ({nombres}). "
                 f"Guía paso a paso con los prompts listos para copiar: "
                 f"projects/{project.project_id}/{guia} "
-                f"(alternativa si se agota la cuota: {otra}). "
+                f"(alternativa si se agota la cuota: {otra}).{aviso_ref} "
                 f"Genera cada clip, descárgalo y súbelo a "
                 f"projects/{project.project_id}/clips/ (menú ⋮ → Upload) con ese "
                 f"nombre: las tildes y las mayúsculas dan igual, y vale .mp4, "
@@ -128,6 +149,16 @@ def _clave(nombre: str) -> str:
     base = unicodedata.normalize("NFKD", nombre)
     base = "".join(c for c in base if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", "", base.lower())
+
+
+def _find_ref(refs_dir: Path, personaje: str) -> Path | None:
+    """Imagen de referencia de un personaje, por nombre (tolerante con tildes)."""
+    objetivo = _clave(personaje)
+    for cand in sorted(refs_dir.iterdir()):
+        if (cand.is_file() and cand.suffix.lower() in REF_EXTS
+                and _clave(cand.stem) == objetivo):
+            return cand
+    return None
 
 
 def _revisar(path: Path) -> str | None:
@@ -209,7 +240,36 @@ def _clip_len(default: int = 8) -> int:
     return int((config.PIPELINE.get("animate") or {}).get("clip_len_s", default))
 
 
-def _prompts_meta(project: Project, script: dict, faltantes: list[dict]) -> str:
+def _bloque_referencia(pid: str, refs: dict) -> list[str]:
+    """Explica la carpeta refs/ según si ya hay imágenes o no."""
+    con = [n for n, r in refs.items() if r]
+    if con:
+        return [
+            "## Imágenes de referencia detectadas",
+            "",
+            "Se usarán como origen de los clips (modo referencia):",
+            "",
+            *[f"- **{n}** → `refs/{refs[n].name}`" for n in con],
+            "",
+            "Descárgalas a tu equipo para poder adjuntarlas en el navegador:",
+            f"menú ⋮ → **Download** → `projects/{pid}/refs/<archivo>`.",
+            "",
+        ]
+    return [
+        "## ¿Tienes una imagen del personaje?",
+        "",
+        "Un dibujo, una foto, un fotograma que te gustó de un intento anterior:",
+        f"súbelo a `projects/{pid}/refs/` con el nombre del personaje",
+        "(`limon.png`, `fresa.jpg` — sin tildes ni mayúsculas) y vuelve a lanzar",
+        "`resume`. Esta guía se reescribe sola en **modo referencia**: en vez de",
+        "inventar el personaje en cada intento, todos los clips parten de esa",
+        "imagen. Es lo que más reduce que cambie de cara entre escenas.",
+        "",
+    ]
+
+
+def _prompts_meta(project: Project, script: dict, faltantes: list[dict],
+                  refs: dict) -> str:
     """Guía para Meta AI / Vibes (meta.ai): imagen → Animate → lip sync.
 
     Flujo y reglas según el Centro de ayuda oficial de Meta (ago-2026):
@@ -249,29 +309,57 @@ def _prompts_meta(project: Project, script: dict, faltantes: list[dict]) -> str:
         "- Lo que publiques en el feed de Vibes es público: NO lo publiques ahí",
         "  si el episodio es para tu canal. Solo genera y descarga.",
         "",
-        "## Paso 1 — La imagen de cada personaje (una sola vez, se reutiliza)",
+    ]
+    partes += _bloque_referencia(pid, refs)
+    partes += [
+        "## Paso 1 — La imagen maestra de cada personaje (una vez, se reutiliza)",
         "",
     ]
     for p in script.get("personajes", []):
+        ref = refs.get(p["nombre"])
+        partes.append(f"### {p['nombre']}")
+        if ref:
+            partes += [
+                f"Referencia: `refs/{ref.name}` — adjúntala en el chat de Meta AI",
+                "y pide el restyle. Si el parecido te convence, esa es la imagen",
+                "maestra; si no, salta este paso y anima la referencia tal cual.",
+                "",
+                "```",
+                "Convierte esta imagen en un personaje de animación 3D estilo "
+                "Pixar, en vertical y primer plano, con la cara completa visible "
+                "y mirando a la cámara. Mantén exactamente la forma, los colores "
+                "y los rasgos del original. Fondo simple y desenfocado, "
+                "iluminación suave, colores vibrantes. Sin texto ni letras.",
+                "```",
+                "[no verificado: editar una imagen subida depende de tu región "
+                "y versión de la app]",
+                "",
+            ]
+        else:
+            partes += [
+                "```",
+                f"Imagina un personaje de dibujos animados con cara expresiva: "
+                f"{p.get('descriptor', '')}. Tiene ojos grandes y boca animada, "
+                f"en primer plano vertical, mirando a la cámara con expresión "
+                f"{p.get('personalidad') or 'expresiva'}. Fondo simple y "
+                f"desenfocado. Estilo de animación 3D tipo Pixar, iluminación "
+                f"cinematográfica suave, colores vibrantes. Sin texto ni letras "
+                f"en la imagen.",
+                "```",
+                "Si sale realista o sin cara, insiste en *personaje de dibujos",
+                "animados con ojos y boca*: es el fallo típico con frutas.",
+                "",
+            ]
         partes += [
-            f"### {p['nombre']}",
-            "```",
-            f"Imagina un primer plano vertical de {p.get('descriptor', '')}. "
-            f"El personaje mira a la cámara con la cara completa visible y una "
-            f"expresión {p.get('personalidad') or 'expresiva'}. Fondo simple y "
-            f"desenfocado. Usa un estilo de animación 3D tipo Pixar, con "
-            f"iluminación cinematográfica suave y colores vibrantes. Sin texto "
-            f"ni letras en la imagen.",
-            "```",
-            "Guárdala (descárgala) antes de animar: la vas a reutilizar en cada",
-            "clip de este personaje y en los próximos episodios.",
+            "Descárgala antes de animar: la reutilizas en cada clip de este",
+            "personaje y en los próximos episodios.",
             "",
         ]
     partes += [
         f"## Paso 2 — Un clip por línea (Animate, ~{seg} s, vertical)",
         "",
-        "Para cada clip: abre la imagen del personaje (o súbela) → **Animate** →",
-        "pega el prompt → genera → descarga.",
+        "Para cada clip: abre la imagen maestra del personaje (o súbela) →",
+        "**Animate** → pega el prompt → genera → descarga.",
         "",
         "Sobre el **lip sync**: si tu versión permite subir un audio, usa el",
         "archivo de voz que ya generamos (indicado en cada clip) y la boca",
@@ -282,10 +370,14 @@ def _prompts_meta(project: Project, script: dict, faltantes: list[dict]) -> str:
     for f in faltantes:
         contexto = (f" Alrededor: {f['contexto_visual']}."
                     if f.get("contexto_visual") else "")
+        origen = (f"Imagen de origen: `{f['referencia']}`"
+                  if f.get("referencia") else
+                  f"Imagen de origen: la maestra de **{f['quien']}** (Paso 1)")
         partes += [
             f"### `{f['clip']}`",
             f"Personaje: **{f['quien']}** · línea de {f['dur_s']} s · "
             f"emoción: {f['emocion']}",
+            origen,
             f"Audio para el lip sync: `{f['audio']}`",
             f"Texto de la línea: «{f['texto']}»",
             "",
@@ -303,7 +395,8 @@ def _prompts_meta(project: Project, script: dict, faltantes: list[dict]) -> str:
     return "\n".join(partes)
 
 
-def _prompts_flow(project: Project, script: dict, faltantes: list[dict]) -> str:
+def _prompts_flow(project: Project, script: dict, faltantes: list[dict],
+                  refs: dict) -> str:
     """Guía para Google Flow: ingrediente por personaje + prompt por clip."""
     pid = project.project_id
     seg = _clip_len()
@@ -315,23 +408,35 @@ def _prompts_flow(project: Project, script: dict, faltantes: list[dict]) -> str:
         "propio): pide ACTUACIÓN y EMOCIÓN, no diálogo hablado. Si el clip sale",
         "con audio, el montaje lo ignora.",
         "",
+    ]
+    partes += _bloque_referencia(pid, refs)
+    partes += [
         "## Paso 1 — Ingrediente de cada personaje (una sola vez)",
-        "",
-        "Modo Image (Nano Banana) → pega el descriptor → guárdala como",
-        "ingrediente. Así el personaje se ve IGUAL en todos los clips.",
         "",
     ]
     for p in script.get("personajes", []):
-        partes += [
-            f"### Ingrediente: {p['nombre']}",
-            "```",
-            f"3D animated character portrait, Pixar style, neutral background, "
-            f"facing camera, full face visible: {p.get('descriptor', '')}. "
-            f"Vertical 9:16, cinematic lighting, vibrant colors, no text, "
-            f"no watermark.",
-            "```",
-            "",
-        ]
+        ref = refs.get(p["nombre"])
+        partes.append(f"### Ingrediente: {p['nombre']}")
+        if ref:
+            partes += [
+                f"Sube `refs/{ref.name}` directamente como **Ingredient**: Flow",
+                "acepta imágenes propias y las usa como identidad del personaje.",
+                "No hace falta generarla.",
+                "",
+            ]
+        else:
+            partes += [
+                "Modo Image (Nano Banana) → pega esto → guárdala como ingrediente.",
+                "",
+                "```",
+                f"3D animated cartoon character with an expressive face, big eyes "
+                f"and animated mouth: {p.get('descriptor', '')}. Pixar style, "
+                f"neutral background, facing camera, full face visible. "
+                f"Vertical 9:16, cinematic lighting, vibrant colors, no text, "
+                f"no watermark.",
+                "```",
+                "",
+            ]
     partes += [
         f"## Paso 2 — Clips (Video → Ingredients → Veo 3.1 Lite → 9:16 → {seg} s)",
         "",
