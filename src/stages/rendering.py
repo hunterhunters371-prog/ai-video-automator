@@ -86,7 +86,9 @@ class RenderingStage(BaseStage):
             f"fade=t=in:st=0:d=0.3,"
             f"fade=t=out:st={max(dur - 0.4, 0):.2f}:d=0.4[vc]"
         )
-        filters.append(f"[vc]ass={plan['captions']['ass']}[vout]")
+        # fps final explícito: concat hereda el rate del 1er segmento y zoompan
+        # puede ignorar su propio fps → sin esto la salida sale a 25 fps.
+        filters.append(f"[vc]ass={plan['captions']['ass']},fps={fps}[vout]")
 
         filters.append(f"[{voice_idx}:a]aresample=44100[voz]")
         if music_idx is not None:

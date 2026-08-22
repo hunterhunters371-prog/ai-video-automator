@@ -65,13 +65,21 @@ produce un video vertical 9:16 (~30 s) con:
 ## Estado (22 ago 2026)
 
 - M0 ✅ (commit base).
-- M1: las 8 etapas + `status` del CLI **implementadas en código** (capa
+- M1: las 8 etapas + `status` del CLI implementadas en código (capa
   `src/config.py` + `src/llm.py` + `src/websearch.py`; etapas research → qc).
-  **Pendiente de verificación**: primera ejecución real con las claves del
-  usuario (`docs/SETUP.md`). No verificado hasta generar el primer Short.
-- ASSETS con imágenes IA gratuitas (mismo día): proveedores sin tarjeta
-  (HF Inference con `HF_TOKEN`, Pollinations con `POLLINATIONS_KEY`; ver
+- **Verificado en sandbox** (sin red, ffmpeg 7.0 real): sintaxis completa,
+  funciones puras (números en letra, preprocesado TTS, parseo de tiempos,
+  ASS/SRT con resaltado y safe zones, resync con duración real, parseo JSON
+  del LLM) y RENDERING + QC end-to-end: render 1080x1920@30 con voz y
+  subtítulos incrustados, QC en verde, render idempotente. Dos bugs
+  encontrados por la prueba y corregidos: fps de salida salía a 25 (ahora
+  normalización final explícita) y falso positivo de pantalla negra con el
+  fondo oscuro de plantilla (blackdetect pix_th 0.10 → 0.04).
+- Aún **[no verificado]** (requieren red o claves): research (web + LLM),
+  script y storyboard (LLM), voice (edge-tts), whisper en editing, y los
+  proveedores de assets (Pexels / HF Inference / Pollinations; el endpoint
+  de Pollinations sigue marcado [no verificado]).
+- ASSETS con imágenes IA gratuitas: proveedores sin tarjeta (HF Inference
+  con `HF_TOKEN`, Pollinations con `POLLINATIONS_KEY`; ver
   `configs/images.yml`). Orden por escena: ruta explícita → video stock →
-  imagen IA → foto stock → fondo de color. El endpoint exacto de la API
-  nueva de Pollinations quedó marcado `[no verificado]` en `assets.py`:
-  ajustarlo si falla en la primera ejecución real.
+  imagen IA → foto stock → fondo de color.

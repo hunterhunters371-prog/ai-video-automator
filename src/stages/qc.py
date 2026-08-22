@@ -83,7 +83,9 @@ class QCStage(BaseStage):
         return json.loads(proc.stdout)
 
     def _detect(self, render: Path, kind: str, threshold: float) -> dict:
-        filt = (f"blackdetect=d={threshold}:pix_th=0.10" if kind == "black"
+        # pix_th=0.04: negro ABSOLUTO (~#000000). Un fondo oscuro de marca
+        # (#0E0E10, lum 5.5%) NO es pantalla negra; con 0.10 daba falso positivo.
+        filt = (f"blackdetect=d={threshold}:pix_th=0.04" if kind == "black"
                 else f"freezedetect=n=0.003:d={threshold}")
         proc = subprocess.run(
             ["ffmpeg", "-i", str(render), "-vf", filt, "-an", "-f", "null", "-"],
