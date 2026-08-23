@@ -12,24 +12,41 @@ stages:
   storyboard: { timeout_s: 180, retries: 2 }
   assets:     { timeout_s: 600, retries: 2 }
   voice:      { timeout_s: 300, retries: 3 }
-  animate:    { timeout_s: 600, retries: 1 }
+  # ANIMATE con Wan genera un clip por línea y cada uno tarda de 1 a 5 min:
+  # 6 clips pueden irse a 30 min. Con 600 s se cortaba a medias y se perdía
+  # cuota ya gastada. retries: 1 a propósito — reintentar la etapa entera
+  # volvería a generar clips que ya están.
+  animate:    { timeout_s: 5400, retries: 1 }
   editing:    { timeout_s: 600, retries: 2 }
   rendering:  { timeout_s: 900, retries: 2 }
   qc:         { timeout_s: 300, retries: 1 }
 
 # Clips de personaje que hablan (M2, solo plantillas con mode: historia).
-# provider decide QUÉ guía de prompts se nombra al pausar; ANIMATE escribe
-# siempre las dos (prompts_meta.md y prompts_flow.md) para poder saltar de
-# proveedor cuando uno agota su cuota diaria.
-#   meta  — Meta AI / Vibes (meta.ai): imagen → Animate → lip sync. Gratis
-#           durante el rollout, tope diario, posible marca de agua.
-#   flow  — Google Flow: Veo 3.1 Lite, 50 créditos/día (10 por clip), limpio.
-#   colab — [pendiente] SadTalker sobre nuestro TTS: lip-sync exacto, gratis.
+#   wan   — AUTOMÁTICO. Wan (Alibaba Cloud Model Studio) por API: imagen del
+#           personaje → clip. Cuota gratis de estreno: 50 s por modelo y 90
+#           días en la región Singapur, o sea un episodio entero (6×8 s=48 s).
+#           Después, 1080P mudo ≈ 0,0375 $/s ≈ 1,80 $ por episodio.
+#           Requiere DASHSCOPE_API_KEY en .env → docs/wan-alibaba.md
+#   meta  — MANUAL. Meta AI / Vibes (meta.ai): imagen → Animate → lip sync.
+#   flow  — MANUAL. Google Flow: Veo 3.1 Lite, 50 créditos/día (10 por clip).
+# Con meta o flow, ANIMATE pausa y escribe la guía de prompts. Las dos guías
+# se escriben siempre que falte algún clip, también en modo wan, para poder
+# terminar a mano si la API falla.
 # El audio maestro SIEMPRE es nuestro edge-tts, así que cambiar de proveedor
 # no toca el montaje.
 animate:
-  provider: meta
-  clip_len_s: 8                # duración que se le pide al generador
+  provider: wan
+  clip_len_s: 8                # duración de referencia para las guías manuales
+  wan:
+    modelo: wan2.6-i2v-flash   # 2-15 s por clip, mudo con audio:false
+    resolucion: 1080P          # la cuota gratis se mide en segundos, no en
+                               # píxeles: a igual gasto, mejor 1080P
+    prompt_extend: true        # Qwen reescribe el prompt antes de animar
+    sondeo_s: 15               # intervalo recomendado por la documentación
+    timeout_tarea_s: 900       # por clip
+    max_clips_por_run: 0       # 0 = sin tope
+    max_segundos_por_run: 0    # 0 = sin tope. Ponlo en 50 para no pasarte de
+                               # la cuota gratis en la primera tanda
 
 retry:
   backoff_base_s: 5            # backoff exponencial: 5s, 10s, 20s...

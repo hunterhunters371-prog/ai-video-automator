@@ -32,6 +32,9 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 GITHUB_MODELS_TOKEN = os.getenv("GITHUB_MODELS_TOKEN", "")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 POLLINATIONS_KEY = os.getenv("POLLINATIONS_KEY", "")
+# Alibaba Cloud Model Studio (Wan): clips de video por API. La clave tiene que
+# ser de la región Singapur, que es la única con cuota gratis internacional.
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 
 
 def load_template(name: str) -> dict:
